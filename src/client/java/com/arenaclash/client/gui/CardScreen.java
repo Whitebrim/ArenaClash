@@ -44,7 +44,7 @@ public class CardScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Dark overlay without blur (renderBackground in 1.21.1 applies blur shader)
+        // Draw dark semi-transparent background (renderBackground is overridden to no-op)
         context.fill(0, 0, width, height, 0xC0101010);
 
         // Title
@@ -117,6 +117,11 @@ public class CardScreen extends Screen {
             scrollOffset++;
         }
         return true;
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // No-op: prevent 1.21.1 from applying blur shader behind the screen
     }
 
     @Override

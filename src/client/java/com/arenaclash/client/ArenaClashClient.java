@@ -86,11 +86,18 @@ public class ArenaClashClient implements ClientModInitializer {
                     });
                 });
 
-        // Card inventory sync
+        // Card inventory sync — also refresh any open screen
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.CardInventorySync.ID,
                 (payload, context) -> {
                     context.client().execute(() -> {
                         cardInventoryData = payload.data();
+                        // If card/deployment screen is open, refresh it with new data
+                        MinecraftClient client = context.client();
+                        if (client.currentScreen instanceof CardScreen) {
+                            client.setScreen(new CardScreen(cardInventoryData));
+                        } else if (client.currentScreen instanceof DeploymentScreen) {
+                            client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
+                        }
                     });
                 });
 
@@ -108,11 +115,15 @@ public class ArenaClashClient implements ClientModInitializer {
                     });
                 });
 
-        // Deployment slot sync
+        // Deployment slot sync — also refresh if deployment screen is open
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.DeploymentSlotSync.ID,
                 (payload, context) -> {
                     context.client().execute(() -> {
                         deploymentSlotData = payload.data();
+                        MinecraftClient client = context.client();
+                        if (client.currentScreen instanceof DeploymentScreen && cardInventoryData != null) {
+                            client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
+                        }
                     });
                 });
 

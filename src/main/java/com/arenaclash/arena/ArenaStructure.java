@@ -196,7 +196,7 @@ public class ArenaStructure {
             for (int y = maxY; y >= minY; y--) { // Top down for visual effect
                 for (int z = minZ; z <= maxZ; z++) {
                     BlockPos pos = new BlockPos(x, y, z);
-                    if (!world.getBlockState(pos).isAir() && rand.nextDouble() < chance) {
+                    if (!world.getBlockState(pos).isAir() && rand.nextFloat() < chance) {
                         world.breakBlock(pos, false);
                     }
                 }

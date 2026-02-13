@@ -4,6 +4,7 @@ import com.arenaclash.ai.LanePathfinder;
 import com.arenaclash.card.MobCard;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
+import net.minecraft.block.Blocks;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -222,11 +223,14 @@ public class ArenaManager {
     }
 
     /**
-     * Start the battle - spawn all placed mobs and begin their advance.
+     * Start the battle - remove divider, spawn all placed mobs and begin their advance.
      */
     public void startBattle() {
         if (arenaWorld == null) return;
         battleActive = true;
+
+        // === Remove the glass divider ===
+        removeDivider();
 
         // Spawn mobs from all deployment slots
         for (Lane.LaneId laneId : Lane.LaneId.values()) {
@@ -237,8 +241,7 @@ public class ArenaManager {
 
                     MobCard card = slot.getPlacedCard();
                     ArenaMob arenaMob = new ArenaMob(
-                            null, // owner UUID set by GameManager
-                            team, card, laneId, slot.getPosition()
+                            null, team, card, laneId, slot.getPosition()
                     );
 
                     arenaMob.spawn(arenaWorld, slot.getPosition());
@@ -249,6 +252,49 @@ public class ArenaManager {
                     activeMobs.add(arenaMob);
                 }
             }
+        }
+    }
+
+    /**
+     * Remove the center divider glass blocks so mobs can cross.
+     */
+    private void removeDivider() {
+        GameConfig cfg = GameConfig.get();
+        int cx = cfg.arenaCenterX;
+        int cz = cfg.arenaCenterZ;
+        int y = cfg.arenaY;
+        int sep = cfg.laneSeparation;
+        int arenaHalfWidth = sep + cfg.laneWidth + 10;
+
+        int minX = cx - arenaHalfWidth;
+        int maxX = cx + arenaHalfWidth;
+
+        // Remove glass divider line (1 block high at y level)
+        for (int x = minX; x <= maxX; x++) {
+            BlockPos pos = new BlockPos(x, y, cz);
+            if (!arenaWorld.getBlockState(pos).isAir()) {
+                arenaWorld.setBlockState(pos, Blocks.AIR.getDefaultState());
+            }
+        }
+    }
+
+    /**
+     * Rebuild the center divider (between rounds).
+     */
+    public void rebuildDivider() {
+        GameConfig cfg = GameConfig.get();
+        int cx = cfg.arenaCenterX;
+        int cz = cfg.arenaCenterZ;
+        int y = cfg.arenaY;
+        int sep = cfg.laneSeparation;
+        int arenaHalfWidth = sep + cfg.laneWidth + 10;
+
+        int minX = cx - arenaHalfWidth;
+        int maxX = cx + arenaHalfWidth;
+
+        for (int x = minX; x <= maxX; x++) {
+            arenaWorld.setBlockState(new BlockPos(x, y, cz),
+                    Blocks.TINTED_GLASS.getDefaultState());
         }
     }
 
@@ -346,8 +392,7 @@ public class ArenaManager {
         // Remove all mob entities
         if (arenaWorld != null) {
             for (ArenaMob mob : activeMobs) {
-                var entity = mob.getEntity(arenaWorld);
-                if (entity != null) entity.discard();
+                mob.removeEntity(arenaWorld);
             }
         }
         activeMobs.clear();
@@ -366,6 +411,8 @@ public class ArenaManager {
             for (ArenaStructure structure : structures) {
                 structure.removeMarker(arenaWorld);
             }
+            // Rebuild divider for next prep phase
+            rebuildDivider();
         }
     }
 

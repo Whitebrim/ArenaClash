@@ -245,6 +245,11 @@ public class DeploymentScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        // No-op: prevent 1.21.1 from applying blur shader
+    }
+
+    @Override
     public boolean shouldPause() {
         return false;
     }

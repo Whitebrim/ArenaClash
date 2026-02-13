@@ -125,6 +125,13 @@ public class GameManager {
             ServerPlayerEntity player = getPlayer(data.getPlayerId());
             if (player != null) {
                 data.setReadyForBattle(false);
+
+                // Clear inventory at game start (round 1)
+                if (currentRound == 1) {
+                    player.getInventory().clear();
+                    player.currentScreenHandler.sendContentUpdates();
+                }
+
                 worldManager.teleportToSurvival(player, data.getTeam());
 
                 // Disable XP collection (handled by mixin/event)
