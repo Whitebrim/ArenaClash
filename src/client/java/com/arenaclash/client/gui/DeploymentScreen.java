@@ -91,7 +91,8 @@ public class DeploymentScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        this.renderBackground(ctx, mouseX, mouseY, delta);
+        // Dark overlay without blur (renderBackground in 1.21.1 applies blur shader)
+        ctx.fill(0, 0, width, height, 0xC0101010);
 
         // Title
         ctx.drawCenteredTextWithShadow(textRenderer, "§6§lDeploy Your Forces", width / 2, 10, 0xFFFFFF);

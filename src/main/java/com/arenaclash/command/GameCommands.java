@@ -182,6 +182,8 @@ public class GameCommands {
         for (int i = 0; i < count; i++) {
             data.getCardInventory().addCard(new MobCard(mobId));
         }
+        // Sync cards to client so GUI updates immediately
+        GameManager.getInstance().syncCards(player);
         source.sendFeedback(() -> Text.literal("§aGave " + count + "x " + def.displayName() + " to " + player.getName().getString()), true);
         return 1;
     }

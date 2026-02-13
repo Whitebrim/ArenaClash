@@ -3,8 +3,10 @@ package com.arenaclash.event;
 import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.game.GamePhase;
+import com.arenaclash.game.PlayerGameData;
 import com.arenaclash.network.NetworkHandler;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
@@ -17,6 +19,7 @@ public class GameEventHandlers {
 
     public static void register() {
         registerMobDeathHandler();
+        registerRespawnHandler();
         registerC2SPacketHandlers();
     }
 
@@ -34,6 +37,28 @@ public class GameEventHandlers {
                 if (MobCardRegistry.isRegistered(entity.getType())) {
                     gm.onMobKilled(player, entity.getType());
                 }
+            }
+        });
+    }
+
+    /**
+     * After respawn, redirect player back to their survival world (not arena/overworld).
+     */
+    private static void registerRespawnHandler() {
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+            GameManager gm = GameManager.getInstance();
+            if (!gm.isGameActive()) return;
+
+            PlayerGameData data = gm.getPlayerData(newPlayer.getUuid());
+            if (data == null) return;
+
+            GamePhase phase = gm.getPhase();
+            if (phase == GamePhase.SURVIVAL) {
+                // Teleport back to survival world
+                gm.getWorldManager().teleportToSurvival(newPlayer, data.getTeam());
+            } else if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE) {
+                // Teleport back to arena at their team's side
+                gm.getWorldManager().teleportToArena(newPlayer, data.getTeam());
             }
         });
     }

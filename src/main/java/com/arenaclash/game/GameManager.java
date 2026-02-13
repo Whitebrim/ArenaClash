@@ -502,7 +502,7 @@ public class GameManager {
         }
     }
 
-    private void syncCards(ServerPlayerEntity player) {
+    public void syncCards(ServerPlayerEntity player) {
         PlayerGameData data = playerData.get(player.getUuid());
         if (data == null) return;
         ServerPlayNetworking.send(player,

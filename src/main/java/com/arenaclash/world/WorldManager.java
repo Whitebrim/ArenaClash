@@ -112,15 +112,16 @@ public class WorldManager {
     }
 
     /**
-     * Teleport a player to their overworld.
+     * Teleport a player to their overworld with safe spawn.
      */
     public void teleportToSurvival(ServerPlayerEntity player, TeamSide team) {
         ServerWorld world = getWorld(team, DimensionType.OVERWORLD);
         if (world == null) return;
 
-        // Find spawn position
         BlockPos spawnPos = world.getSpawnPos();
-        player.teleport(world, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+        // Find safe Y: scan down from sky to find solid ground
+        BlockPos safePos = findSafeSpawn(world, spawnPos.getX(), spawnPos.getZ());
+        player.teleport(world, safePos.getX() + 0.5, safePos.getY(), safePos.getZ() + 0.5,
                 player.getYaw(), player.getPitch());
     }
 
@@ -156,6 +157,28 @@ public class WorldManager {
         } else {
             teleportToSurvival(player, team);
         }
+    }
+
+    /**
+     * Find a safe spawn position by scanning downward from max height.
+     * Looks for a solid block with 2 air blocks above it.
+     */
+    private BlockPos findSafeSpawn(ServerWorld world, int x, int z) {
+        // Force-load the chunk so blocks are available
+        world.getChunk(x >> 4, z >> 4);
+
+        for (int y = world.getTopY() - 1; y > world.getBottomY(); y--) {
+            BlockPos pos = new BlockPos(x, y, z);
+            BlockPos above1 = pos.up();
+            BlockPos above2 = pos.up(2);
+            if (!world.getBlockState(pos).isAir()
+                    && world.getBlockState(above1).isAir()
+                    && world.getBlockState(above2).isAir()) {
+                return above1; // Stand on top of the solid block
+            }
+        }
+        // Fallback: place at y=100
+        return new BlockPos(x, 100, z);
     }
 
     /**

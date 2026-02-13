@@ -44,7 +44,8 @@ public class CardScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderBackground(context, mouseX, mouseY, delta);
+        // Dark overlay without blur (renderBackground in 1.21.1 applies blur shader)
+        context.fill(0, 0, width, height, 0xC0101010);
 
         // Title
         context.drawCenteredTextWithShadow(textRenderer,
