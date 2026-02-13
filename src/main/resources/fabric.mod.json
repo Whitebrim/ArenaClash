@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "arenaclash",
+  "version": "${version}",
+  "name": "Arena Clash",
+  "description": "Clash Royale-style PvP arena with survival resource gathering",
+  "authors": ["Brim"],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/arenaclash/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.arenaclash.ArenaClash"],
+    "client": ["com.arenaclash.client.ArenaClashClient"]
+  },
+  "mixins": ["arenaclash.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

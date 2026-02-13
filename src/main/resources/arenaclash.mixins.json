@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "com.arenaclash.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "OreBlockMixin",
+    "ExperienceOrbMixin",
+    "ServerWorldMixin"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
