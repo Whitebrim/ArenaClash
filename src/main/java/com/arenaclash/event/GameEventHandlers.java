@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -30,17 +31,30 @@ public class GameEventHandlers {
         registerRespawnHandler();
         registerAttackProtection();
         registerBlockProtection();
+        registerPlayerJoinHandler();
         registerC2SPacketHandlers();
     }
 
     // === Mob death → card creation ===
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
-            GameManager gm = GameManager.getInstance();
-            if (gm.getPhase() != GamePhase.SURVIVAL) return;
             if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
-                if (MobCardRegistry.isRegistered(entity.getType())) {
-                    gm.onMobKilled(player, entity.getType());
+                if (!com.arenaclash.card.MobCardRegistry.isRegistered(entity.getType())) return;
+
+                var def = com.arenaclash.card.MobCardRegistry.getByEntityType(entity.getType());
+                if (def == null) return;
+
+                // Check if we're on an integrated server (singleplayer)
+                if (!player.getServer().isDedicated()) {
+                    // Singleplayer: forward via bridge → client TCP → dedicated server
+                    com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(def.id());
+                    player.sendMessage(Text.literal("§a+ " + def.displayName() + " card obtained!"));
+                } else {
+                    // Dedicated server: handle directly via GameManager
+                    GameManager gm = GameManager.getInstance();
+                    if (gm.getPhase() == GamePhase.SURVIVAL) {
+                        gm.onMobKilled(player, entity.getType());
+                    }
                 }
             }
         });
@@ -166,6 +180,18 @@ public class GameEventHandlers {
 
         // Other phases on arena: not allowed
         return false;
+    }
+
+    // === Player joins MC server → teleport to arena ===
+    private static void registerPlayerJoinHandler() {
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+            GameManager gm = GameManager.getInstance();
+            if (gm.isGameActive()) {
+                // Delay by 1 tick to let player fully load
+                server.execute(() -> gm.onPlayerJoinMc(player));
+            }
+        });
     }
 
     // === C2S Packet Handlers ===

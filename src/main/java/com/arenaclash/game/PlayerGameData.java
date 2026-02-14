@@ -36,6 +36,7 @@ public class PlayerGameData {
     public String getSurvivalReturnWorld() { return survivalReturnWorld; }
 
     public void setTeam(TeamSide team) { this.team = team; }
+    public void setCardInventory(CardInventory inventory) { this.cardInventory = inventory; }
     public void setReadyForBattle(boolean ready) { this.readyForBattle = ready; }
     public void addExperience(int xp) { this.experiencePoints += xp; }
 

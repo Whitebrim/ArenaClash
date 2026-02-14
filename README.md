@@ -165,7 +165,7 @@ client/
 ## MVP Scope
 
 **Included:**
-- 7 runtime worlds (Arena + 2×Overworld/Nether/End)
+- Arena + SinglePlayer worlds
 - Full game cycle: Survival → Prep → Battle × 3 rounds
 - Card drops from mob kills, card inventory
 - Custom A* pathfinding + custom combat

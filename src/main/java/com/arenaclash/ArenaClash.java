@@ -6,6 +6,7 @@ import com.arenaclash.config.GameConfig;
 import com.arenaclash.event.GameEventHandlers;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.network.NetworkHandler;
+import com.arenaclash.tcp.ArenaClashTcpServer;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -16,29 +17,38 @@ public class ArenaClash implements ModInitializer {
     public static final String MOD_ID = "arenaclash";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
+    private static ArenaClashTcpServer tcpServer;
+
     @Override
     public void onInitialize() {
         LOGGER.info("Arena Clash initializing...");
 
-        // Load config
         GameConfig.load();
-
-        // Register mob card definitions
         MobCardRegistry.init();
-
-        // Register network packets
         NetworkHandler.registerS2CPayloads();
         NetworkHandler.registerC2SPayloads();
-
-        // Register commands
         GameCommands.register();
-
-        // Register event handlers
         GameEventHandlers.register();
 
-        // Server started - initialize GameManager
+        // Server started → init GameManager + start TCP server
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             GameManager.getInstance().init(server);
+
+            // Start TCP server on MC port + 1
+            GameConfig cfg = GameConfig.get();
+            int mcPort = server.getServerPort();
+            if (mcPort <= 0) mcPort = 25565; // singleplayer/default
+            int tcpPort = cfg.tcpPort > 0 ? cfg.tcpPort : mcPort + 1;
+
+            try {
+                tcpServer = new ArenaClashTcpServer(tcpPort, mcPort);
+                tcpServer.start();
+                GameManager.getInstance().setTcpServer(tcpServer);
+                LOGGER.info("Arena Clash TCP server started on port {}", tcpPort);
+            } catch (Exception e) {
+                LOGGER.error("Failed to start TCP server on port {}", tcpPort, e);
+            }
+
             LOGGER.info("Arena Clash GameManager initialized");
         });
 
@@ -49,12 +59,19 @@ public class ArenaClash implements ModInitializer {
 
         // Clean up on server stop
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            if (tcpServer != null) {
+                tcpServer.stop();
+                LOGGER.info("Arena Clash TCP server stopped");
+            }
             if (GameManager.getInstance().isGameActive()) {
-                LOGGER.info("Server stopping - cleaning up Arena Clash game");
                 GameManager.getInstance().resetGame();
             }
         });
 
         LOGGER.info("Arena Clash initialized!");
+    }
+
+    public static ArenaClashTcpServer getTcpServer() {
+        return tcpServer;
     }
 }

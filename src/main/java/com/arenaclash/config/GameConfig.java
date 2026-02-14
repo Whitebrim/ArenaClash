@@ -49,6 +49,9 @@ public class GameConfig {
     public int arenaCenterX = 0;
     public int arenaCenterZ = 0;
 
+    // Networking
+    public int tcpPort = 0;                         // 0 = MC port + 1
+
     public static GameConfig get() {
         if (INSTANCE == null) load();
         return INSTANCE;

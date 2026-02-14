@@ -31,8 +31,14 @@ public class GameCommands {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             var root = literal("ac").requires(source -> source.hasPermissionLevel(2));
 
-            // /ac start <player1> <player2>
+            // /ac start — start game with 2 TCP-connected players
             root.then(literal("start")
+                    .executes(ctx -> {
+                        String result = GameManager.getInstance().startGame();
+                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        return 1;
+                    })
+                    // Legacy: /ac start <player1> <player2>
                     .then(argument("player1", EntityArgumentType.player())
                             .then(argument("player2", EntityArgumentType.player())
                                     .executes(ctx -> {
