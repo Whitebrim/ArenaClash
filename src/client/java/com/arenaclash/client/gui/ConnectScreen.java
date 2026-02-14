@@ -125,9 +125,13 @@ public class ConnectScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderBackground(context, mouseX, mouseY, delta);
+        // Dark overlay without vanilla blur
+        context.fill(0, 0, width, height, 0xFF101010);
 
-        // Title
+        // Render widgets first (buttons, text field)
+        super.render(context, mouseX, mouseY, delta);
+
+        // Title - render AFTER super so text is on top of everything
         context.drawCenteredTextWithShadow(textRenderer,
                 "§6§l⚔ Arena Clash ⚔", width / 2, 20, 0xFFAA00);
         context.drawCenteredTextWithShadow(textRenderer,
@@ -155,8 +159,11 @@ public class ConnectScreen extends Screen {
             context.drawCenteredTextWithShadow(textRenderer,
                     "§aSession: " + tcp.getSessionId(), width / 2, 200, 0x55FF55);
         }
+    }
 
-        super.render(context, mouseX, mouseY, delta);
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // No-op: prevent 1.21.1 from applying blur shader
     }
 
     @Override

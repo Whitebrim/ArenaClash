@@ -149,6 +149,11 @@ public class ArenaClashTcpClient {
                 ArenaClashClient.currentPhase = currentPhase;
                 ArenaClashClient.currentRound = currentRound;
                 ArenaClashClient.timerTicks = timerTicks;
+
+                // Fix 5: Clear deployment slot data when a new round's PREPARATION starts
+                if ("PREPARATION".equals(currentPhase)) {
+                    ArenaClashClient.deploymentSlotData = null;
+                }
             }
 
             case SyncProtocol.S2C_TIMER_SYNC -> {
@@ -191,6 +196,33 @@ public class ArenaClashTcpClient {
                     client.player.sendMessage(Text.literal("§7" + details));
                 }
             }
+
+            case SyncProtocol.S2C_CHAT_RELAY -> {
+                // Fix 6: Chat relay from another player
+                String sender = msg.get("sender").getAsString();
+                String chatMessage = msg.get("message").getAsString();
+                ArenaClashClient.onChatRelayFromTcp(sender, chatMessage);
+            }
+
+            case SyncProtocol.S2C_GAME_SEED -> {
+                // Fix 3: Receive game seed for singleplayer world creation
+                long seed = msg.get("seed").getAsLong();
+                LOGGER.info("Received game seed: {}", seed);
+                // Only trigger world creation on round 1
+                // Round 2+ world reload is handled by RETURN_TO_SINGLE
+                if (currentRound <= 1) {
+                    ArenaClashClient.scheduleWorldCreation(seed, 1);
+                }
+            }
+
+            case SyncProtocol.S2C_RECONNECT_STATE -> {
+                // Fix 7: Reconnection state restore
+                String rPhase = msg.get("phase").getAsString();
+                int rRound = msg.get("round").getAsInt();
+                int rTimer = msg.get("timerTicks").getAsInt();
+                String rCards = msg.has("cards") ? msg.get("cards").getAsString() : "";
+                ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards);
+            }
         }
     }
 
@@ -214,5 +246,9 @@ public class ArenaClashTcpClient {
 
     public void sendRemoveCard(String laneId, int slotIndex) {
         send(SyncProtocol.removeCard(laneId, slotIndex));
+    }
+
+    public void sendChat(String message) {
+        send(SyncProtocol.chatMessage(message));
     }
 }

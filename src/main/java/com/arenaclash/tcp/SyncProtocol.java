@@ -32,6 +32,9 @@ public class SyncProtocol {
     public static final String S2C_GAME_RESULT = "GAME_RESULT";
     public static final String S2C_TIMER_SYNC = "TIMER_SYNC";
     public static final String S2C_MESSAGE = "MESSAGE";
+    public static final String S2C_CHAT_RELAY = "CHAT_RELAY";
+    public static final String S2C_GAME_SEED = "GAME_SEED";
+    public static final String S2C_RECONNECT_STATE = "RECONNECT_STATE";
 
     // === C2S Message Types ===
     public static final String C2S_AUTH = "AUTH";
@@ -41,6 +44,7 @@ public class SyncProtocol {
     public static final String C2S_PLACE_CARD = "PLACE_CARD";
     public static final String C2S_REMOVE_CARD = "REMOVE_CARD";
     public static final String C2S_BELL_RING = "BELL_RING";
+    public static final String C2S_CHAT = "CHAT";
 
     // === IO Helpers ===
 
@@ -195,6 +199,36 @@ public class SyncProtocol {
     public static JsonObject inventorySync(String itemsJson) {
         JsonObject msg = makeMessage(C2S_INVENTORY_SYNC);
         msg.addProperty("items", itemsJson);
+        return msg;
+    }
+
+    // New message builders
+
+    public static JsonObject chatRelay(String senderName, String message) {
+        JsonObject msg = makeMessage(S2C_CHAT_RELAY);
+        msg.addProperty("sender", senderName);
+        msg.addProperty("message", message);
+        return msg;
+    }
+
+    public static JsonObject gameSeed(long seed) {
+        JsonObject msg = makeMessage(S2C_GAME_SEED);
+        msg.addProperty("seed", seed);
+        return msg;
+    }
+
+    public static JsonObject chatMessage(String message) {
+        JsonObject msg = makeMessage(C2S_CHAT);
+        msg.addProperty("message", message);
+        return msg;
+    }
+
+    public static JsonObject reconnectState(String phase, int round, int timerTicks, String cardsSnbt) {
+        JsonObject msg = makeMessage(S2C_RECONNECT_STATE);
+        msg.addProperty("phase", phase);
+        msg.addProperty("round", round);
+        msg.addProperty("timerTicks", timerTicks);
+        msg.addProperty("cards", cardsSnbt);
         return msg;
     }
 }

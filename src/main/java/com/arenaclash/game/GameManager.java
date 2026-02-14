@@ -61,6 +61,7 @@ public class GameManager {
     private final Set<UUID> readyPlayers = new HashSet<>();
 
     private boolean gameActive = false;
+    private long currentGameSeed = 0;
 
     // Cumulative stats across rounds
     private final Map<TeamSide, Double> cumulativeThroneDamage = new EnumMap<>(TeamSide.class);
@@ -127,6 +128,14 @@ public class GameManager {
         gameActive = true;
         currentRound = 1;
 
+        // Generate game seed
+        GameConfig cfgSeed = GameConfig.get();
+        long seed = cfgSeed.gameSeed != 0 ? cfgSeed.gameSeed : new java.util.Random().nextLong();
+        this.currentGameSeed = seed;
+
+        // Send game seed to all clients for singleplayer world creation
+        tcpServer.broadcast(SyncProtocol.gameSeed(seed));
+
         // Start survival phase (players stay in singleplayer)
         startSurvivalPhase();
 
@@ -164,6 +173,9 @@ public class GameManager {
 
         // Tell clients: stay in singleplayer, survival phase started
         tcpServer.broadcast(SyncProtocol.phaseChange("SURVIVAL", currentRound, phaseTicksRemaining));
+
+        // Send seed so clients can create/reload their world (Fix 3)
+        tcpServer.broadcast(SyncProtocol.gameSeed(currentGameSeed));
 
         // If players are on MC server, tell them to disconnect
         tcpServer.broadcast(SyncProtocol.returnToSingle());
@@ -204,6 +216,14 @@ public class GameManager {
                 "§e⚔ Preparation Phase! Connect to server to place your mobs!"));
 
         syncAllCards();
+
+        // Fix 5: Sync empty deployment slots to all clients at start of preparation
+        for (UUID uuid : playerOrder) {
+            TcpSession session = tcpServer.getSession(uuid);
+            if (session != null) {
+                syncDeploymentSlots(session);
+            }
+        }
     }
 
     private void startBattlePhase() {
@@ -558,28 +578,50 @@ public class GameManager {
     /**
      * Called when an MC player joins the server during prep/battle.
      * Teleport them to the right spot on the arena.
+     * Fix 4: Added safety checks to prevent disconnect packet errors.
      */
     public void onPlayerJoinMc(ServerPlayerEntity player) {
         if (!gameActive) return;
         TeamSide team = playerTeams.get(player.getUuid());
-        if (team == null) return;
+        if (team == null) {
+            // Player is not part of the game - don't kick them during login
+            // as that causes the disconnect packet error. Just let them be.
+            player.sendMessage(Text.literal("§c[ArenaClash] You are not part of the current game."));
+            return;
+        }
 
         if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE) {
-            // Clear their MC inventory (they keep items in singleplayer)
-            player.getInventory().clear();
-            player.currentScreenHandler.sendContentUpdates();
+            // Delay teleport slightly to ensure connection is fully established (Fix 4)
+            server.execute(() -> {
+                try {
+                    if (player.isDisconnected()) return;
 
-            worldManager.teleportToArena(player, team);
+                    // Clear their MC inventory (they keep items in singleplayer)
+                    player.getInventory().clear();
+                    player.currentScreenHandler.sendContentUpdates();
 
-            // Sync cards via MC networking too
-            TcpSession session = tcpServer.getSession(player.getUuid());
-            if (session != null) {
-                ServerPlayNetworking.send(player,
-                        new NetworkHandler.CardInventorySync(session.getCardInventory().toNbt()));
-            }
+                    worldManager.teleportToArena(player, team);
 
-            // Mark as MC-connected
-            if (session != null) session.setConnectedToMc(true);
+                    // Sync cards via MC networking too
+                    TcpSession session = tcpServer.getSession(player.getUuid());
+                    if (session != null) {
+                        ServerPlayNetworking.send(player,
+                                new NetworkHandler.CardInventorySync(session.getCardInventory().toNbt()));
+                        session.setConnectedToMc(true);
+                    }
+                } catch (Exception e) {
+                    // Fix 4: Catch any errors during player setup to prevent crash
+                    if (server != null) {
+                        server.execute(() -> {
+                            try {
+                                if (!player.isDisconnected()) {
+                                    player.sendMessage(Text.literal("§c[ArenaClash] Error during arena setup. Try reconnecting."));
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                    }
+                }
+            });
         }
     }
 
@@ -662,4 +704,6 @@ public class GameManager {
         }
         return result;
     }
+
+    public MinecraftServer getServer() { return server; }
 }

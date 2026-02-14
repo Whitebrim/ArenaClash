@@ -1,8 +1,10 @@
 package com.arenaclash.tcp;
 
 import com.arenaclash.ArenaClash;
+import com.arenaclash.card.CardInventory;
 import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.game.GameManager;
+import com.arenaclash.game.TeamSide;
 import com.google.gson.JsonObject;
 
 import java.io.IOException;
@@ -92,9 +94,32 @@ public class ArenaClashTcpServer {
 
                 String playerName = authMsg.get("playerName").getAsString();
                 UUID playerUuid = UUID.fromString(authMsg.get("uuid").getAsString());
+
+                // Fix 7: Check for existing session (reconnection)
+                TcpSession existingSession = sessionsByUuid.get(playerUuid);
+                CardInventory reconnectCards = null;
+                TeamSide reconnectTeam = null;
+                if (existingSession != null) {
+                    ArenaClash.LOGGER.info("[ArenaClash TCP] Player {} reconnecting (replacing old session {})",
+                            playerName, existingSession.getSessionId());
+                    reconnectCards = existingSession.getCardInventory();
+                    reconnectTeam = existingSession.getTeam();
+                    sessions.remove(existingSession.getSessionId());
+                    existingSession.disconnect();
+                }
+
                 String sessionId = "session_" + sessionCounter.incrementAndGet();
 
                 session = new TcpSession(sessionId, playerName, playerUuid, socket.getOutputStream());
+
+                // Restore state from previous session if reconnecting
+                if (reconnectCards != null) {
+                    session.setCardInventory(reconnectCards);
+                }
+                if (reconnectTeam != null) {
+                    session.setTeam(reconnectTeam);
+                }
+
                 sessions.put(sessionId, session);
                 sessionsByUuid.put(playerUuid, session);
 
@@ -103,8 +128,34 @@ public class ArenaClashTcpServer {
                 // Send welcome
                 session.send(SyncProtocol.welcome(sessionId, port, mcPort));
 
+                // Fix 7: Send reconnect state if game is active
+                GameManager gm2 = GameManager.getInstance();
+                if (gm2.isGameActive() && reconnectTeam != null) {
+                    String cardsSnbt = session.getCardInventory().toNbt().toString();
+                    session.send(SyncProtocol.reconnectState(
+                            gm2.getPhase().name(),
+                            gm2.getCurrentRound(),
+                            gm2.getPhaseTicksRemaining(),
+                            cardsSnbt
+                    ));
+                    ArenaClash.LOGGER.info("[ArenaClash TCP] Sent reconnect state to {}", playerName);
+                }
+
                 // Notify lobby update
                 broadcastLobbyUpdate();
+
+                // Auto-start game when 2 players are connected
+                if (hasTwoPlayers() && !GameManager.getInstance().isGameActive()) {
+                    ArenaClash.LOGGER.info("[ArenaClash TCP] 2 players connected, auto-starting game!");
+                    // Schedule on server main thread
+                    net.minecraft.server.MinecraftServer server = GameManager.getInstance().getServer();
+                    if (server != null) {
+                        server.execute(() -> {
+                            String result = GameManager.getInstance().startGame();
+                            ArenaClash.LOGGER.info("[ArenaClash TCP] Auto-start result: {}", result);
+                        });
+                    }
+                }
 
                 // Read loop
                 while (session.isAlive() && running) {
@@ -168,6 +219,15 @@ public class ArenaClashTcpServer {
             }
             case SyncProtocol.C2S_INVENTORY_SYNC -> {
                 // TODO: sync player's survival inventory for use on arena
+            }
+            case SyncProtocol.C2S_CHAT -> {
+                // Fix 6: Relay chat to all other players
+                String chatMessage = msg.get("message").getAsString();
+                for (TcpSession other : sessions.values()) {
+                    if (!other.getSessionId().equals(session.getSessionId())) {
+                        other.send(SyncProtocol.chatRelay(session.getPlayerName(), chatMessage));
+                    }
+                }
             }
         }
     }

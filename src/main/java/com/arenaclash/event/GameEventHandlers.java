@@ -188,8 +188,11 @@ public class GameEventHandlers {
             ServerPlayerEntity player = handler.getPlayer();
             GameManager gm = GameManager.getInstance();
             if (gm.isGameActive()) {
-                // Delay by 1 tick to let player fully load
-                server.execute(() -> gm.onPlayerJoinMc(player));
+                // Fix 4: Delay by 2 ticks to let player fully load and connection stabilize
+                // This prevents the "Sending unknown packet disconnect" error
+                server.execute(() -> {
+                    server.execute(() -> gm.onPlayerJoinMc(player));
+                });
             }
         });
     }

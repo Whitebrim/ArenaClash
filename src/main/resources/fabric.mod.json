@@ -14,6 +14,7 @@
     "client": ["com.arenaclash.client.ArenaClashClient"]
   },
   "mixins": ["arenaclash.mixins.json", "arenaclash.client.mixins.json"],
+  "accessWidener": "arenaclash.accesswidener",
   "depends": {
     "fabricloader": ">=0.16.0",
     "minecraft": "~1.21.1",

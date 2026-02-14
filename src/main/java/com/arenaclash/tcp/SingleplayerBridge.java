@@ -17,4 +17,10 @@ public class SingleplayerBridge {
      * Polled by the client tick handler and sent via TCP.
      */
     public static final ConcurrentLinkedQueue<String> pendingMobKills = new ConcurrentLinkedQueue<>();
+
+    /**
+     * Chat messages from singleplayer to forward via TCP (Fix 6).
+     * Includes player messages, death messages, and achievement messages.
+     */
+    public static final ConcurrentLinkedQueue<String> pendingChatMessages = new ConcurrentLinkedQueue<>();
 }

@@ -5,7 +5,8 @@
   "mixins": [
     "OreBlockMixin",
     "ExperienceOrbMixin",
-    "ServerWorldMixin"
+    "ServerWorldMixin",
+    "PlayerManagerMixin"
   ],
   "client": [],
   "injectors": {

@@ -38,6 +38,7 @@ public class TcpSession {
     public TeamSide getTeam() { return team; }
     public void setTeam(TeamSide team) { this.team = team; }
     public CardInventory getCardInventory() { return cardInventory; }
+    public void setCardInventory(CardInventory inventory) { this.cardInventory = inventory; }
     public boolean isReady() { return ready; }
     public void setReady(boolean ready) { this.ready = ready; }
     public boolean isConnectedToMc() { return connectedToMc; }

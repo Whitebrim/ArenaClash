@@ -4,6 +4,7 @@ import com.arenaclash.client.gui.CardScreen;
 import com.arenaclash.client.gui.DeploymentScreen;
 import com.arenaclash.client.render.GameHudRenderer;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
+import com.arenaclash.client.world.WorldCreationHelper;
 import com.arenaclash.network.NetworkHandler;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -23,6 +24,10 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 public class ArenaClashClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("ArenaClash-Client");
 
@@ -37,7 +42,7 @@ public class ArenaClashClient implements ClientModInitializer {
     private static ArenaClashTcpClient tcpClient;
     public static String lastServerAddress = "localhost:25566";
 
-    // Scheduled actions (from TCP thread → client thread)
+    // Scheduled actions (from TCP thread -> client thread)
     private static volatile String scheduledMcHost = null;
     private static volatile int scheduledMcPort = 0;
     private static volatile boolean scheduledReturnToSingle = false;
@@ -46,8 +51,11 @@ public class ArenaClashClient implements ClientModInitializer {
     private static KeyBinding openCardsKey;
     private static KeyBinding ringBellKey;
 
-    // Track if we disconnected from MC server to go back to singleplayer
+    // Track singleplayer world name for return trips
     private static String savedSingleplayerWorld = null;
+
+    // Config file for persistent IP address (Fix 8)
+    private static final String CONFIG_FILE = "arenaclash_client.txt";
 
     @Override
     public void onInitializeClient() {
@@ -59,6 +67,9 @@ public class ArenaClashClient implements ClientModInitializer {
                 "key.arenaclash.ring_bell", InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_B, "category.arenaclash"
         ));
+
+        // Load saved server address (Fix 8)
+        loadSavedAddress();
 
         registerMcPacketHandlers();
 
@@ -81,6 +92,14 @@ public class ArenaClashClient implements ClientModInitializer {
             }
         }
 
+        // Forward singleplayer chat messages via TCP (Fix 6)
+        if (tcpClient != null && tcpClient.isConnected()) {
+            String chatMsg;
+            while ((chatMsg = com.arenaclash.tcp.SingleplayerBridge.pendingChatMessages.poll()) != null) {
+                tcpClient.sendChat(chatMsg);
+            }
+        }
+
         // Handle scheduled MC server connect
         if (scheduledMcHost != null) {
             String host = scheduledMcHost;
@@ -93,6 +112,19 @@ public class ArenaClashClient implements ClientModInitializer {
         if (scheduledReturnToSingle) {
             scheduledReturnToSingle = false;
             returnToSingleplayer(client);
+        }
+
+        // Handle world creation ticks (Fix 3)
+        WorldCreationHelper.tickPending(client);
+
+        // Track singleplayer world name
+        if (client.isInSingleplayer() && client.getServer() != null
+                && "SURVIVAL".equals(currentPhase)) {
+            String levelName = client.getServer().getSaveProperties().getLevelName();
+            if (levelName != null && levelName.startsWith(WorldCreationHelper.WORLD_NAME_PREFIX)) {
+                WorldCreationHelper.setCurrentWorldDirName(levelName);
+                savedSingleplayerWorld = levelName;
+            }
         }
 
         // Key bindings
@@ -109,7 +141,6 @@ public class ArenaClashClient implements ClientModInitializer {
             if (tcpClient != null && tcpClient.isConnected()) {
                 tcpClient.sendBellRing();
             }
-            // Also send via MC networking if connected to server
             try {
                 ClientPlayNetworking.send(new NetworkHandler.RingBell());
             } catch (Exception ignored) {}
@@ -134,7 +165,15 @@ public class ArenaClashClient implements ClientModInitializer {
         }
 
         tcpClient = new ArenaClashTcpClient();
-        return tcpClient.connect(host, port, playerName, profileId);
+        boolean success = tcpClient.connect(host, port, playerName, profileId);
+
+        // Save address on successful connect (Fix 8)
+        if (success) {
+            lastServerAddress = host + ":" + port;
+            saveAddress();
+        }
+
+        return success;
     }
 
     public static void disconnectTcp() {
@@ -155,67 +194,54 @@ public class ArenaClashClient implements ClientModInitializer {
     // WORLD TRANSITIONS
     // =========================================================================
 
-    /**
-     * Schedule connecting to MC server (called from TCP read thread).
-     */
     public static void scheduleConnectToMcServer(String host, int port) {
         scheduledMcHost = host;
         scheduledMcPort = port;
     }
 
-    /**
-     * Schedule returning to singleplayer (called from TCP read thread).
-     */
     public static void scheduleReturnToSingleplayer() {
         scheduledReturnToSingle = true;
     }
 
-    /**
-     * Connect to MC server for arena phase.
-     * Saves current singleplayer world name so we can return later.
-     */
+    public static void scheduleWorldCreation(long seed, int round) {
+        WorldCreationHelper.scheduleWorldCreation(seed, round);
+    }
+
     private void connectToMcServer(MinecraftClient client, String host, int port) {
         LOGGER.info("Connecting to MC server {}:{} for arena phase", host, port);
 
-        // Save current singleplayer world info
         if (client.isInSingleplayer() && client.getServer() != null) {
-            savedSingleplayerWorld = client.getServer().getSaveProperties()
-                    .getLevelName();
+            savedSingleplayerWorld = client.getServer().getSaveProperties().getLevelName();
         }
 
-        // Disconnect from singleplayer
         if (client.world != null) {
             client.world.disconnect();
         }
         client.disconnect();
 
-        // Connect to MC server
-        ServerAddress address = new ServerAddress(host, port);
-        ServerInfo info = new ServerInfo("Arena Clash", address.toString(), ServerInfo.ServerType.OTHER);
-        ConnectScreen.connect(
-                client.currentScreen != null ? client.currentScreen : new TitleScreen(),
-                client, address, info, false, null);
+        new Thread(() -> {
+            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            client.execute(() -> {
+                ServerAddress address = new ServerAddress(host, port);
+                ServerInfo info = new ServerInfo("Arena Clash", address.toString(), ServerInfo.ServerType.OTHER);
+                ConnectScreen.connect(
+                        client.currentScreen != null ? client.currentScreen : new TitleScreen(),
+                        client, address, info, false, null);
+            });
+        }, "ArenaClash-ConnectMC").start();
     }
 
-    /**
-     * Return to singleplayer from MC server.
-     */
     private void returnToSingleplayer(MinecraftClient client) {
         LOGGER.info("Returning to singleplayer (world: {})", savedSingleplayerWorld);
 
-        // Disconnect from MC server
         if (client.world != null) {
             client.world.disconnect();
         }
         client.disconnect();
 
         if (savedSingleplayerWorld != null) {
-            // Small delay to let disconnect complete, then reopen world
             new Thread(() -> {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ignored) {}
-
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                 client.execute(() -> {
                     try {
                         client.createIntegratedServerLoader().start(savedSingleplayerWorld, () -> {});
@@ -231,18 +257,14 @@ public class ArenaClashClient implements ClientModInitializer {
     }
 
     // =========================================================================
-    // TCP → CLIENT STATE SYNC
+    // TCP -> CLIENT STATE SYNC
     // =========================================================================
 
-    /**
-     * Called when TCP receives card sync data.
-     */
     public static void onCardSyncFromTcp(String cardsSnbt) {
         try {
             NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(cardsSnbt);
             cardInventoryData = nbt;
 
-            // Refresh open screens
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.currentScreen instanceof CardScreen) {
                 client.setScreen(new CardScreen(cardInventoryData));
@@ -254,8 +276,57 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
+    /** Chat relay from other player (Fix 6). */
+    public static void onChatRelayFromTcp(String sender, String message) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            client.player.sendMessage(Text.literal("\u00a77[" + sender + "] \u00a7f" + message));
+        }
+    }
+
+    /** Reconnection state restore (Fix 7). */
+    public static void onReconnectState(String phase, int round, int timer, String cardsSnbt) {
+        currentPhase = phase;
+        currentRound = round;
+        timerTicks = timer;
+        if (cardsSnbt != null && !cardsSnbt.isEmpty()) {
+            onCardSyncFromTcp(cardsSnbt);
+        }
+        LOGGER.info("Reconnected to game: phase={}, round={}", phase, round);
+    }
+
     // =========================================================================
-    // MC NETWORK HANDLERS (for when connected to MC server)
+    // IP ADDRESS PERSISTENCE (Fix 8)
+    // =========================================================================
+
+    private static void loadSavedAddress() {
+        try {
+            Path configDir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
+            Path configFile = configDir.resolve(CONFIG_FILE);
+            if (Files.exists(configFile)) {
+                String content = Files.readString(configFile).trim();
+                if (!content.isEmpty()) {
+                    lastServerAddress = content;
+                    LOGGER.info("Loaded saved server address: {}", lastServerAddress);
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.warn("Failed to load saved server address", e);
+        }
+    }
+
+    private static void saveAddress() {
+        try {
+            Path configDir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
+            Path configFile = configDir.resolve(CONFIG_FILE);
+            Files.writeString(configFile, lastServerAddress);
+        } catch (IOException e) {
+            LOGGER.warn("Failed to save server address", e);
+        }
+    }
+
+    // =========================================================================
+    // MC NETWORK HANDLERS
     // =========================================================================
 
     private void registerMcPacketHandlers() {
@@ -281,7 +352,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
                         context.client().player.sendMessage(
-                                Text.literal("§6§l★ " + payload.displayName() + " Card! ★"));
+                                Text.literal("\u00a76\u00a7l\u2605 " + payload.displayName() + " Card! \u2605"));
                     }
                 }));
 
@@ -298,7 +369,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
                         context.client().player.sendMessage(Text.literal(
-                                "§6=== " + payload.resultType() + " - Winner: " + payload.winner() + " ==="));
+                                "\u00a76=== " + payload.resultType() + " - Winner: " + payload.winner() + " ==="));
                     }
                 }));
     }
