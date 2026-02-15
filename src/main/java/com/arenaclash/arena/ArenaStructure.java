@@ -1,263 +1,284 @@
 package com.arenaclash.arena;
 
-import com.arenaclash.config.GameConfig;
+import com.arenaclash.ai.CombatSystem;
+import com.arenaclash.ai.DamageNumberManager;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.text.Text;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.projectile.ArrowEntity;
+import net.minecraft.particle.DustParticleEffect;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import org.joml.Vector3f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.List;
 
 /**
- * Represents a destructible arena structure (Tower or Throne).
- * Uses an invisible armor stand as the "target" entity for mob AI.
+ * Represents a structure on the arena (Tower or Throne).
+ *
+ * TOWERS:
+ * - Fire real ArrowEntity projectiles at nearest enemy on associated lane
+ * - Arrows spawn from top of tower, fly with arc
+ * - Visual: arrow entity visible to all players
+ * - Sound: entity.arrow.shoot
+ *
+ * THRONES:
+ * - AoE shockwave attack: expanding ring of colored particles
+ * - Damage falloff by distance from throne center
+ * - Sound: entity.warden.sonic_boom (low volume)
+ * - Knockback away from throne
  */
 public class ArenaStructure {
-    public enum StructureType { THRONE, TOWER }
+    private static final Logger LOGGER = LoggerFactory.getLogger("ArenaClash-Structure");
+
+    public enum StructureType {
+        TOWER, THRONE
+    }
 
     private final StructureType type;
-    private final TeamSide owner;
-    private final BlockPos position;
-    private final Box boundingBox;      // Area of blocks that make up the structure
-    private double maxHP;
-    private double currentHP;
-    private UUID markerEntityId;        // Invisible armor stand for targeting
-    private Lane.LaneId associatedLane; // Which lane this tower covers (null for throne)
+    private final TeamSide team;
+    private final ArenaDefinition.StructureDef definition;
+    private final ServerWorld world;
 
-    // Attack state
+    private double currentHp;
     private int attackCooldownRemaining = 0;
+    private boolean destroyed = false;
 
-    public ArenaStructure(StructureType type, TeamSide owner, BlockPos position, Box boundingBox) {
+    // Throne AoE ring animation
+    private int aoeTick = -1;
+    private static final int AOE_RING_DURATION = 10; // Ticks for ring expansion
+
+    public ArenaStructure(StructureType type, TeamSide team, ArenaDefinition.StructureDef definition, ServerWorld world) {
         this.type = type;
-        this.owner = owner;
-        this.position = position;
-        this.boundingBox = boundingBox;
-        GameConfig cfg = GameConfig.get();
-        this.maxHP = type == StructureType.THRONE ? cfg.throneHP : cfg.towerHP;
-        this.currentHP = maxHP;
-    }
-
-    public StructureType getType() { return type; }
-    public TeamSide getOwner() { return owner; }
-    public BlockPos getPosition() { return position; }
-    public Box getBoundingBox() { return boundingBox; }
-    public double getMaxHP() { return maxHP; }
-    public double getCurrentHP() { return currentHP; }
-    public boolean isDestroyed() { return currentHP <= 0; }
-    public Lane.LaneId getAssociatedLane() { return associatedLane; }
-    public void setAssociatedLane(Lane.LaneId lane) { this.associatedLane = lane; }
-
-    /**
-     * Spawn the invisible armor stand marker entity for this structure.
-     */
-    public void spawnMarker(ServerWorld world) {
-        removeMarker(world); // Clean up old marker if any
-        ArmorStandEntity marker = new ArmorStandEntity(world,
-                position.getX() + 0.5, position.getY() + 1.5, position.getZ() + 0.5);
-        marker.setInvisible(true);
-        marker.setInvulnerable(true);
-        marker.setNoGravity(true);
-        marker.setCustomNameVisible(true);
-        marker.setSilent(true);
-        marker.setSmall(true);
-        marker.addCommandTag("arenaclash_structure");
-        marker.addCommandTag("arenaclash_marker");
-        world.spawnEntity(marker);
-        this.markerEntityId = marker.getUuid();
-        updateMarkerName(world);
+        this.team = team;
+        this.definition = definition;
+        this.world = world;
+        this.currentHp = definition.hp;
     }
 
     /**
-     * Remove the marker entity from the world.
+     * Main tick — handles attack cooldown and targeting.
      */
-    public void removeMarker(ServerWorld world) {
-        if (markerEntityId != null) {
-            Entity entity = world.getEntity(markerEntityId);
-            if (entity != null) entity.discard();
-            markerEntityId = null;
+    public void tick(DamageNumberManager damageNumbers) {
+        if (destroyed) return;
+
+        // Tick AoE ring animation
+        if (aoeTick >= 0) {
+            tickAoeRing();
         }
-    }
 
-    /**
-     * Apply damage to this structure. Returns true if destroyed.
-     */
-    public boolean damage(double amount, ServerWorld world) {
-        this.currentHP = Math.max(0, currentHP - amount);
-        updateMarkerName(world);
-
-        // Destroy some blocks proportionally to damage
-        if (currentHP <= 0) {
-            destroyAllBlocks(world);
-            removeMarker(world);
-            return true;
-        } else {
-            // Degrade blocks based on HP percentage
-            degradeBlocks(world);
-        }
-        return false;
-    }
-
-    /**
-     * Tick the structure - handle attacks on nearby enemies.
-     */
-    public void tick(ServerWorld world, List<ArenaMob> enemyMobs) {
-        if (isDestroyed()) return;
-
+        // Attack cooldown
         if (attackCooldownRemaining > 0) {
             attackCooldownRemaining--;
             return;
         }
 
-        GameConfig cfg = GameConfig.get();
-        double range = type == StructureType.TOWER ? cfg.towerRange : cfg.throneAoeRange;
-        double damage = type == StructureType.TOWER ? cfg.towerDamage : cfg.throneAoeDamage;
-        int cooldown = type == StructureType.TOWER ? cfg.towerAttackCooldown : cfg.throneAttackCooldown;
-
-        // Find enemies in range
-        ArenaMob target = null;
-        double closestDist = Double.MAX_VALUE;
-        List<ArenaMob> inRange = new ArrayList<>();
-
-        for (ArenaMob mob : enemyMobs) {
-            if (mob.isDead()) continue;
-            Entity entity = mob.getEntity(world);
-            if (entity == null) continue;
-
-            double dist = entity.getBlockPos().getSquaredDistance(position);
-            if (dist <= range * range) {
-                inRange.add(mob);
-                if (dist < closestDist) {
-                    closestDist = dist;
-                    target = mob;
-                }
+        // Find target and attack
+        LivingEntity target = findTarget();
+        if (target != null) {
+            if (type == StructureType.TOWER) {
+                fireArrow(target);
+            } else {
+                fireAoeShockwave(damageNumbers);
             }
+            attackCooldownRemaining = definition.attackCooldown;
         }
-
-        if (target == null) return;
-
-        if (type == StructureType.TOWER) {
-            // Tower: single target, arrow projectile
-            target.takeDamage(damage, world);
-            // TODO: Spawn arrow particle/projectile for visual
-        } else {
-            // Throne: AoE damage to all in range
-            for (ArenaMob mob : inRange) {
-                mob.takeDamage(damage, world);
-            }
-        }
-
-        attackCooldownRemaining = cooldown;
     }
 
     /**
-     * Check if this tower covers a given lane (towers cover their own lane + center).
+     * Tower: Fire a real arrow at the target.
      */
-    public boolean coversLane(Lane.LaneId laneId) {
-        if (type == StructureType.THRONE) return true; // Throne covers everything nearby
-        if (associatedLane == null) return false;
-        return associatedLane == laneId || laneId == Lane.LaneId.CENTER;
+    private void fireArrow(LivingEntity target) {
+        // Arrow spawns from top of structure
+        Vec3d spawnPos = new Vec3d(
+                definition.position.getX() + 0.5,
+                definition.boundsMax.getY() + 0.5,
+                definition.position.getZ() + 0.5
+        );
+
+        Vec3d targetPos = target.getPos().add(0, target.getHeight() * 0.5, 0);
+        Vec3d direction = targetPos.subtract(spawnPos);
+        double dist = direction.length();
+        direction = direction.normalize();
+
+        // Add arc: more upward velocity for longer distances
+        double arcBonus = Math.min(dist * 0.02, 0.3);
+
+        ArrowEntity arrow = new ArrowEntity(world, spawnPos.x, spawnPos.y, spawnPos.z, new net.minecraft.item.ItemStack(net.minecraft.item.Items.ARROW), null);
+        arrow.setPosition(spawnPos);
+        arrow.setVelocity(direction.x, direction.y + arcBonus, direction.z, 1.8f, 1.0f);
+        arrow.setDamage(definition.attackDamage);
+        arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
+
+        world.spawnEntity(arrow);
+
+        // Sound
+        world.playSound(null, definition.position, SoundEvents.ENTITY_ARROW_SHOOT,
+                SoundCategory.BLOCKS, 1.0f, 0.9f + world.random.nextFloat() * 0.2f);
     }
 
     /**
-     * Update the floating HP display. Called every tick by ArenaManager
-     * to ensure it's always visible and re-spawns marker if entity disappeared.
+     * Throne: AoE shockwave attack with expanding particle ring.
      */
-    public void updateMarkerName(ServerWorld world) {
-        if (isDestroyed()) return;
+    private void fireAoeShockwave(DamageNumberManager damageNumbers) {
+        Vec3d center = Vec3d.ofCenter(definition.position).add(0, 1, 0);
+        double range = definition.attackRange;
+        TeamSide enemyTeam = team.opponent();
 
-        Entity entity = markerEntityId != null ? world.getEntity(markerEntityId) : null;
+        // Start AoE ring animation
+        aoeTick = 0;
 
-        // Re-spawn marker if it's gone (entity unloaded, killed, etc.)
-        if (entity == null || !entity.isAlive()) {
-            ArmorStandEntity marker = new ArmorStandEntity(world,
-                    position.getX() + 0.5, position.getY() + 1.5, position.getZ() + 0.5);
-            marker.setInvisible(true);
-            marker.setInvulnerable(true);
-            marker.setNoGravity(true);
-            marker.setCustomNameVisible(true);
-            marker.setSilent(true);
-            marker.setSmall(true);
-            marker.addCommandTag("arenaclash_structure");
-            marker.addCommandTag("arenaclash_marker");
-            world.spawnEntity(marker);
-            this.markerEntityId = marker.getUuid();
-            entity = marker;
-        }
+        // Sound: Warden sonic boom at low volume
+        world.playSound(null, definition.position, SoundEvents.ENTITY_WARDEN_SONIC_BOOM,
+                SoundCategory.BLOCKS, 0.4f, 1.5f);
 
-        // Build colored HP display
-        String label = (type == StructureType.THRONE ? "\u265B Throne" : "\u2691 Tower");
-        String teamColor = (owner == TeamSide.PLAYER1) ? "\u00A79" : "\u00A7c"; // blue / red
-        int hp = (int) currentHP;
-        int max = (int) maxHP;
-        double pct = currentHP / maxHP;
+        // Damage all enemies in range
+        for (Entity entity : world.getOtherEntities(null,
+                net.minecraft.util.math.Box.of(center, range * 2, range * 2, range * 2))) {
+            if (!(entity instanceof LivingEntity living)) continue;
+            if (living.isDead() || living.isRemoved()) continue;
 
-        // HP color: green > 50%, yellow > 25%, red <= 25%
-        String hpColor;
-        if (pct > 0.5) hpColor = "\u00A7a";
-        else if (pct > 0.25) hpColor = "\u00A7e";
-        else hpColor = "\u00A7c";
+            String entTeam = CombatSystem.getTag(living, CombatSystem.TAG_TEAM);
+            if (entTeam == null || !entTeam.equals(enemyTeam.name())) continue;
 
-        // Build HP bar: 10 segments
-        int filledBars = Math.max(0, (int) Math.ceil(pct * 10));
-        StringBuilder bar = new StringBuilder();
-        for (int i = 0; i < 10; i++) {
-            if (i < filledBars) bar.append(hpColor).append("|");
-            else bar.append("\u00A78").append("|");
-        }
+            double dist = living.getPos().distanceTo(center);
+            if (dist > range) continue;
 
-        entity.setCustomName(Text.literal(
-                teamColor + label + " " + bar + " " + hpColor + hp + "\u00A77/" + max
-        ));
-        entity.setCustomNameVisible(true);
-    }
+            // Damage falloff: full at center, 30% at edge
+            float dmg = (float) (definition.attackDamage * (1.0 - 0.7 * (dist / range)));
+            living.damage(world.getDamageSources().magic(), dmg);
 
-    private void degradeBlocks(ServerWorld world) {
-        // Calculate HP percentage and break proportional blocks
-        double hpPercent = currentHP / maxHP;
-        // At 75% break some decorative blocks, at 50% more, at 25% even more
-        // This is a simplified version - you can enhance the visual degradation
-        if (hpPercent < 0.25) {
-            breakRandomBlocks(world, 0.3);
-        } else if (hpPercent < 0.5) {
-            breakRandomBlocks(world, 0.15);
-        } else if (hpPercent < 0.75) {
-            breakRandomBlocks(world, 0.05);
+            // Knockback away from throne
+            double dx = living.getX() - center.x;
+            double dz = living.getZ() - center.z;
+            double kbDist = Math.sqrt(dx * dx + dz * dz);
+            if (kbDist > 0.01) {
+                living.takeKnockback(0.5, -dx / kbDist, -dz / kbDist);
+            }
+
+            damageNumbers.spawn(living.getPos(), dmg, DamageNumberManager.DamageType.AOE);
         }
     }
 
-    private void breakRandomBlocks(ServerWorld world, double chance) {
-        net.minecraft.util.math.random.Random rand = world.getRandom();
-        int minX = (int) boundingBox.minX, minY = (int) boundingBox.minY, minZ = (int) boundingBox.minZ;
-        int maxX = (int) boundingBox.maxX, maxY = (int) boundingBox.maxY, maxZ = (int) boundingBox.maxZ;
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = maxY; y >= minY; y--) { // Top down for visual effect
-                for (int z = minZ; z <= maxZ; z++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (!world.getBlockState(pos).isAir() && rand.nextFloat() < chance) {
-                        world.breakBlock(pos, false);
-                    }
-                }
+    /**
+     * Tick the AoE ring particle animation.
+     */
+    private void tickAoeRing() {
+        if (aoeTick >= AOE_RING_DURATION) {
+            aoeTick = -1;
+            return;
+        }
+
+        Vec3d center = Vec3d.ofCenter(definition.position).add(0, 0.5, 0);
+        double progress = (double) aoeTick / AOE_RING_DURATION;
+        double radius = definition.attackRange * progress;
+
+        // Ring color based on team
+        Vector3f color = team == TeamSide.PLAYER1
+                ? new Vector3f(0.2f, 0.5f, 1.0f)   // Blue for P1
+                : new Vector3f(1.0f, 0.2f, 0.2f);  // Red for P2
+        DustParticleEffect dust = new DustParticleEffect(color, 1.5f);
+
+        // Spawn particles in a ring
+        int particleCount = (int) (radius * 8);
+        for (int i = 0; i < particleCount; i++) {
+            double angle = 2 * Math.PI * i / particleCount;
+            double px = center.x + Math.cos(angle) * radius;
+            double pz = center.z + Math.sin(angle) * radius;
+            world.spawnParticles(dust, px, center.y, pz, 1, 0, 0.1, 0, 0);
+        }
+
+        aoeTick++;
+    }
+
+    /**
+     * Find nearest enemy in range.
+     */
+    private LivingEntity findTarget() {
+        TeamSide enemyTeam = team.opponent();
+        Vec3d center = Vec3d.ofCenter(definition.position);
+        double range = definition.attackRange;
+
+        LivingEntity nearest = null;
+        double nearestDist = range * range;
+
+        for (Entity entity : world.getOtherEntities(null,
+                net.minecraft.util.math.Box.of(center, range * 2, range * 2, range * 2))) {
+            if (!(entity instanceof LivingEntity living)) continue;
+            if (living.isDead() || living.isRemoved()) continue;
+
+            String entTeam = CombatSystem.getTag(living, CombatSystem.TAG_TEAM);
+            if (entTeam == null || !entTeam.equals(enemyTeam.name())) continue;
+
+            double dist = living.squaredDistanceTo(center.x, center.y, center.z);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearest = living;
             }
         }
+
+        return nearest;
     }
 
-    private void destroyAllBlocks(ServerWorld world) {
-        int minX = (int) boundingBox.minX, minY = (int) boundingBox.minY, minZ = (int) boundingBox.minZ;
-        int maxX = (int) boundingBox.maxX, maxY = (int) boundingBox.maxY, maxZ = (int) boundingBox.maxZ;
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    world.breakBlock(pos, false);
-                }
-            }
+    /**
+     * Apply damage to this structure.
+     */
+    public void takeDamage(double damage, LivingEntity attacker, DamageNumberManager damageNumbers) {
+        if (destroyed) return;
+
+        currentHp -= damage;
+        damageNumbers.spawn(Vec3d.ofCenter(definition.position).add(0, 2, 0),
+                (float) damage, DamageNumberManager.DamageType.PHYSICAL);
+
+        if (currentHp <= 0) {
+            destroy();
         }
+    }
+
+    /**
+     * Destroy this structure with visual effects.
+     */
+    private void destroy() {
+        destroyed = true;
+        currentHp = 0;
+
+        Vec3d center = Vec3d.ofCenter(definition.position);
+
+        // Explosion particles
+        world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 1, center.z, 3, 1, 1, 1, 0);
+        world.spawnParticles(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, center.x, center.y + 2, center.z, 20, 2, 2, 2, 0.05);
+
+        // Block debris particles (smoke + breaking)
+        world.spawnParticles(ParticleTypes.SMOKE, center.x, center.y + 1, center.z, 40, 2, 2, 2, 0.1);
+
+        // Sound
+        world.playSound(null, definition.position, SoundEvents.ENTITY_GENERIC_EXPLODE.value(),
+                SoundCategory.BLOCKS, 2.0f, 0.5f);
+        world.playSound(null, definition.position, SoundEvents.BLOCK_ANVIL_DESTROY,
+                SoundCategory.BLOCKS, 1.5f, 0.7f);
+
+        LOGGER.info("{} {} destroyed!", team.name(), type.name());
+    }
+
+    // ========================================================================
+    // GETTERS
+    // ========================================================================
+
+    public StructureType getType() { return type; }
+    public TeamSide getTeam() { return team; }
+    public double getCurrentHp() { return currentHp; }
+    public double getMaxHp() { return definition.hp; }
+    public boolean isDestroyed() { return destroyed; }
+    public BlockPos getPosition() { return definition.position; }
+    public ArenaDefinition.StructureDef getDefinition() { return definition; }
+
+    public double getHpFraction() {
+        return Math.max(0, currentHp / definition.hp);
     }
 }

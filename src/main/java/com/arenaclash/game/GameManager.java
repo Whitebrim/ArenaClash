@@ -1,6 +1,6 @@
 package com.arenaclash.game;
 
-import com.arenaclash.arena.ArenaBuilder;
+import com.arenaclash.arena.ArenaDefinition;
 import com.arenaclash.arena.ArenaManager;
 import com.arenaclash.arena.ArenaStructure;
 import com.arenaclash.arena.Lane;
@@ -115,13 +115,38 @@ public class GameManager {
         playerOrder.add(p1.getPlayerUuid());
         playerOrder.add(p2.getPlayerUuid());
 
-        // Initialize arena world and build
+        // Initialize arena world using ArenaDefinition
         worldManager.createArenaWorld();
-        arenaManager.initialize(worldManager.getArenaWorld());
-        ArenaBuilder.buildArena(worldManager.getArenaWorld());
-
-        // Disable natural mob spawning on arena world
         ServerWorld arenaWorld = worldManager.getArenaWorld();
+
+        // Load arena definition from JSON, or create default
+        ArenaDefinition arenaDef = null;
+        try {
+            java.nio.file.Path configDir = net.fabricmc.loader.api.FabricLoader.getInstance()
+                    .getConfigDir().resolve("arenaclash");
+            java.nio.file.Path defFile = configDir.resolve("arena_definition.json");
+            if (java.nio.file.Files.exists(defFile)) {
+                arenaDef = ArenaDefinition.load(defFile);
+                com.arenaclash.ArenaClash.LOGGER.info("Loaded arena definition from JSON");
+            }
+        } catch (Exception e) {
+            com.arenaclash.ArenaClash.LOGGER.warn("Failed to load arena_definition.json, using defaults", e);
+        }
+
+        if (arenaDef == null) {
+            // Fallback: create default straight-lane arena
+            arenaDef = ArenaDefinition.createDefault(
+                    GameConfig.get().arenaCenterX,
+                    GameConfig.get().arenaCenterZ,
+                    GameConfig.get().arenaY,
+                    GameConfig.get().arenaLaneLength,
+                    12 // lane separation (default)
+            );
+            com.arenaclash.ArenaClash.LOGGER.info("Using default arena definition");
+        }
+
+        // Create ArenaManager with the loaded definition
+        this.arenaManager = new ArenaManager(arenaWorld, arenaDef);
         if (arenaWorld != null) {
             arenaWorld.getGameRules().get(net.minecraft.world.GameRules.DO_MOB_SPAWNING).set(false, server);
         }
@@ -254,12 +279,12 @@ public class GameManager {
             TeamSide opponent = team.opponent();
             ArenaStructure throne = arenaManager.getThrone(opponent);
             if (throne != null) {
-                double dmg = throne.getMaxHP() - throne.getCurrentHP();
+                double dmg = throne.getMaxHp() - throne.getCurrentHp();
                 cumulativeThroneDamage.merge(team, dmg, Double::sum);
             }
             for (ArenaStructure tower : arenaManager.getTowers(opponent)) {
                 if (tower.isDestroyed()) cumulativeTowersDestroyed.merge(team, 1, Integer::sum);
-                double dmg = tower.getMaxHP() - tower.getCurrentHP();
+                double dmg = tower.getMaxHp() - tower.getCurrentHp();
                 cumulativeTowerDamage.merge(team, dmg, Double::sum);
             }
         }
@@ -383,12 +408,9 @@ public class GameManager {
             tcpServer.broadcast(SyncProtocol.timerSync(phaseTicksRemaining));
         }
 
-        // Keep structure HP markers updated during preparation (every 2 seconds)
-        if (phaseTicksRemaining % 40 == 0 && arenaManager != null && worldManager != null && worldManager.getArenaWorld() != null) {
-            for (var structure : arenaManager.getStructures()) {
-                structure.updateMarkerName(worldManager.getArenaWorld());
-            }
-        }
+        // Keep structure HP updated during preparation (every 2 seconds)
+        // HP bars are now rendered client-side via HealthBarRenderer
+        // Structure state is maintained in ArenaStructure instances
 
         // Check if both ready
         if (readyPlayers.size() >= 2) {
@@ -589,17 +611,22 @@ public class GameManager {
         // Build slot data as JSON and send via TCP
         NbtCompound slotsData = new NbtCompound();
         for (Lane.LaneId laneId : Lane.LaneId.values()) {
-            Lane lane = arenaManager.getLanes().get(laneId);
+            Lane lane = arenaManager.getLane(laneId);
             if (lane == null) continue;
             NbtCompound laneNbt = new NbtCompound();
             var slots = lane.getDeploymentSlots(session.getTeam());
             for (int i = 0; i < slots.size(); i++) {
-                Lane.DeploymentSlot slot = slots.get(i);
                 NbtCompound slotNbt = new NbtCompound();
-                slotNbt.putBoolean("empty", slot.isEmpty());
-                if (!slot.isEmpty()) {
-                    slotNbt.put("card", slot.getPlacedCard().toNbt());
+                // Check if a mob has been deployed at this slot by checking ArenaMobs
+                boolean occupied = false;
+                for (var mob : arenaManager.getMobs(session.getTeam())) {
+                    if (mob.getLane().getId() == laneId) {
+                        // Simplified: any mob on this lane means a slot is filled
+                        occupied = true;
+                        break;
+                    }
                 }
+                slotNbt.putBoolean("empty", !occupied);
                 laneNbt.put("slot_" + i, slotNbt);
             }
             slotsData.put(laneId.name(), laneNbt);
@@ -675,10 +702,10 @@ public class GameManager {
     // ========================================================================
 
     public String resetGame() {
-        if (worldManager != null && worldManager.getArenaWorld() != null) {
-            ArenaBuilder.clearArena(worldManager.getArenaWorld());
+        // In template-based system, just clean up entities and delete the world
+        if (arenaManager != null) {
+            arenaManager.fullReset();
         }
-        arenaManager.fullReset();
         if (worldManager != null) {
             worldManager.deleteAllWorlds();
         }
@@ -712,7 +739,7 @@ public class GameManager {
         return server != null ? server.getPlayerManager().getPlayer(id) : null;
     }
 
-    private void broadcastMc(String message, Formatting color) {
+    public void broadcastMc(String message, Formatting color) {
         if (server == null) return;
         server.getPlayerManager().broadcast(Text.literal(message).formatted(color), false);
     }

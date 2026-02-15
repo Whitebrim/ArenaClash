@@ -2,7 +2,9 @@ package com.arenaclash.client;
 
 import com.arenaclash.client.gui.CardScreen;
 import com.arenaclash.client.gui.DeploymentScreen;
+import com.arenaclash.client.render.ArenaZoneRenderer;
 import com.arenaclash.client.render.GameHudRenderer;
+import com.arenaclash.client.render.HealthBarRenderer;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
 import com.arenaclash.client.world.WorldCreationHelper;
 import com.arenaclash.network.NetworkHandler;
@@ -76,6 +78,10 @@ public class ArenaClashClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) ->
                 GameHudRenderer.render(drawContext, renderTickCounter));
+
+        // World-space renderers (HP bars, zone visualization)
+        HealthBarRenderer.register();
+        ArenaZoneRenderer.register();
     }
 
     private void onTick(MinecraftClient client) {

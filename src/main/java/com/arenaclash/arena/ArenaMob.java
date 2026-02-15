@@ -1,369 +1,239 @@
 package com.arenaclash.arena;
 
 import com.arenaclash.ai.CombatSystem;
-import com.arenaclash.card.MobCard;
-import com.arenaclash.card.MobCardDefinition;
-import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.ai.pathing.Path;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
- * Controls an arena mob with custom pathfinding and combat.
+ * Controls a single mob deployed on the arena.
  *
- * Design:
- * - Entity HP is the source of truth (fire, fall dmg etc. work naturally)
- * - Movement via requestTeleport() each tick (works with noAI, syncs to clients)
- * - AI disabled to prevent vanilla wandering/fighting
+ * Movement strategy:
+ * 1. Follow waypoints using Minecraft's navigation system
+ * 2. If navigation fails (stuck), fallback to teleport
+ * 3. Each tick, clamp position to lane boundaries
+ * 4. When enemy in range, stop and engage combat
+ *
+ * The AI doesn't use vanilla AI goals. Instead we clear all goals
+ * and drive behavior purely from this class via tick().
  */
 public class ArenaMob {
-    public enum MobState {
-        IDLE, ADVANCING, FIGHTING, RETREATING, DEAD
-    }
+    private static final Logger LOGGER = LoggerFactory.getLogger("ArenaClash-Mob");
 
-    private final UUID ownerId;
+    private static final double WAYPOINT_REACH_DIST = 2.0;
+    private static final double STUCK_THRESHOLD = 0.05;  // Min movement per second
+    private static final int STUCK_CHECK_INTERVAL = 20;   // Check stuck every second
+    private static final double AGGRO_RANGE = 10.0;
+    private static final double MOVEMENT_SPEED = 0.3;
+
+    private final MobEntity entity;
     private final TeamSide team;
-    private final MobCard sourceCard;
-    private final Lane.LaneId lane;
-    private final BlockPos startSlotPos;
+    private final Lane lane;
+    private final List<Vec3d> waypoints;
 
-    private UUID entityId;
-    private MobState state = MobState.IDLE;
-
-    private final double maxHP;
-    private final double moveSpeed;      // blocks per second
-    private final double attackDamage;
-    private final int attackCooldown;
-    private int attackCooldownRemaining = 0;
-
-    private List<BlockPos> waypoints;
     private int currentWaypointIndex = 0;
+    private int stuckTicks = 0;
+    private Vec3d lastCheckedPos;
+    private boolean isEngagingTarget = false;
+    private LivingEntity currentTarget = null;
 
-    private UUID targetEntityId;
-    private ArenaStructure targetStructure;
-    private boolean markedDead = false;
-
-    public ArenaMob(UUID ownerId, TeamSide team, MobCard card, Lane.LaneId lane, BlockPos startSlotPos) {
-        this.ownerId = ownerId;
+    public ArenaMob(MobEntity entity, TeamSide team, Lane lane) {
+        this.entity = entity;
         this.team = team;
-        this.sourceCard = card;
         this.lane = lane;
-        this.startSlotPos = startSlotPos;
-        this.maxHP = card.getHP();
-        this.moveSpeed = card.getSpeed();
-        this.attackDamage = card.getAttack();
-        this.attackCooldown = card.getAttackCooldown();
+        this.waypoints = lane.getWaypointsForTeam(team);
+        this.lastCheckedPos = entity.getPos();
+
+        // Disable vanilla AI and set up for our control
+        setupAI();
     }
-
-    public UUID getOwnerId() { return ownerId; }
-    public TeamSide getTeam() { return team; }
-    public MobCard getSourceCard() { return sourceCard; }
-    public Lane.LaneId getLane() { return lane; }
-    public UUID getEntityId() { return entityId; }
-    public MobState getState() { return state; }
-    public BlockPos getStartSlotPos() { return startSlotPos; }
-    public double getMaxHP() { return maxHP; }
-    public double getAttackDamage() { return attackDamage; }
-
-    public double getCurrentHP(ServerWorld world) {
-        Entity e = getEntity(world);
-        if (e instanceof LivingEntity living) return living.getHealth();
-        return 0;
-    }
-
-    public boolean isDead() { return markedDead || state == MobState.DEAD; }
 
     /**
-     * Spawn the entity with custom HP, AI disabled, tagged for identification.
+     * Set up the mob for arena combat.
+     * Clears vanilla AI goals so we have full control.
      */
-    public void spawn(ServerWorld world, BlockPos pos) {
-        MobCardDefinition def = sourceCard.getDefinition();
-        if (def == null) return;
+    private void setupAI() {
+        // Don't disable AI entirely — we want physics, animations, etc.
+        entity.setAiDisabled(false);
 
-        Entity entity = def.entityType().create(world);
-        if (entity == null) return;
-
-        entity.refreshPositionAndAngles(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 0, 0);
-
-        if (entity instanceof MobEntity mobEntity) {
-            mobEntity.setAiDisabled(true);
-            mobEntity.setPersistent();
-            var attr = mobEntity.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
-            if (attr != null) attr.setBaseValue(maxHP);
-            mobEntity.setHealth((float) maxHP);
-
-            // Fix 3: Set baby flag for baby_zombie cards
-            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.entity.mob.ZombieEntity zombie) {
-                zombie.setBaby(true);
-            }
+        // Clear all existing goals
+        if (entity.getNavigation() != null) {
+            entity.getNavigation().stop();
         }
 
-        entity.addCommandTag("arenaclash_mob");
-        entity.addCommandTag("team_" + team.name());
-        entity.addCommandTag("lane_" + lane.name());
+        // Make mob persistent (don't despawn)
+        entity.setPersistent();
+
+        // Set custom name visible for debug/HP display
         entity.setCustomNameVisible(true);
-        updateEntityName(entity, (float) maxHP);
-
-        world.spawnEntity(entity);
-        this.entityId = entity.getUuid();
-        this.state = MobState.IDLE;
-    }
-
-    public void startAdvancing(List<BlockPos> waypoints) {
-        this.waypoints = waypoints;
-        this.currentWaypointIndex = 0;
-        this.state = MobState.ADVANCING;
-    }
-
-    public void startRetreating() {
-        if (isDead()) return;
-        this.state = MobState.RETREATING;
     }
 
     /**
-     * Main tick - called every server tick during battle.
+     * Main tick — called each server tick during BATTLE phase.
      */
-    public void tick(ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
-        if (isDead()) return;
+    public void tick() {
+        if (entity.isDead() || entity.isRemoved()) return;
 
-        Entity entity = getEntity(world);
-        if (entity == null || !entity.isAlive()) {
-            markDead();
-            return;
-        }
+        // Lane boundary enforcement
+        enforceLaneBounds();
 
-        // Check entity died from env damage (fire, cactus, etc.)
-        if (entity instanceof LivingEntity living && living.getHealth() <= 0) {
-            markDead();
-            return;
-        }
+        // Check for enemies in range
+        LivingEntity target = findNearestEnemy();
 
-        if (attackCooldownRemaining > 0) attackCooldownRemaining--;
-
-        switch (state) {
-            case ADVANCING -> tickAdvancing(world, entity, allMobs, structures);
-            case FIGHTING -> tickFighting(world, entity, allMobs, structures);
-            case RETREATING -> tickRetreating(world, entity, allMobs);
-            default -> {}
-        }
-
-        // Update nametag with real entity HP
-        if (entity instanceof LivingEntity living) {
-            updateEntityName(entity, living.getHealth());
-        }
-    }
-
-    private void tickAdvancing(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
-        GameConfig cfg = GameConfig.get();
-
-        // Fix 4: Only engage enemies if this mob can deal damage
-        if (attackDamage > 0) {
-            ArenaMob nearestEnemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
-            if (nearestEnemy != null) {
-                targetEntityId = nearestEnemy.getEntityId();
-                targetStructure = null;
-                state = MobState.FIGHTING;
-                return;
-            }
-
-            ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, cfg.mobAggroRange);
-            if (nearestStruct != null) {
-                targetStructure = nearestStruct;
-                targetEntityId = null;
-                state = MobState.FIGHTING;
-                return;
-            }
-        }
-
-        moveTowardWaypoint(entity);
-    }
-
-    private void tickFighting(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
-        double attackRange = 2.5;
-
-        if (targetEntityId != null) {
-            ArenaMob targetMob = findMobByEntityId(allMobs, targetEntityId);
-            if (targetMob == null || targetMob.isDead()) {
-                targetEntityId = null;
-                state = MobState.ADVANCING;
-                return;
-            }
-            Entity targetEntity = targetMob.getEntity(world);
-            if (targetEntity == null) {
-                targetEntityId = null;
-                state = MobState.ADVANCING;
-                return;
-            }
-
-            double dist = entity.squaredDistanceTo(targetEntity);
-            if (dist > attackRange * attackRange) {
-                moveToward(entity, targetEntity.getPos());
-            } else if (attackCooldownRemaining <= 0) {
-                CombatSystem.performAttack(this, targetMob, world);
-                attackCooldownRemaining = attackCooldown;
-            }
-        } else if (targetStructure != null) {
-            if (targetStructure.isDestroyed()) {
-                targetStructure = null;
-                state = MobState.ADVANCING;
-                return;
-            }
-            double dist = entity.getBlockPos().getSquaredDistance(targetStructure.getPosition());
-            if (dist > attackRange * attackRange) {
-                moveToward(entity, Vec3d.ofCenter(targetStructure.getPosition()));
-            } else if (attackCooldownRemaining <= 0) {
-                CombatSystem.attackStructure(this, targetStructure, world);
-                attackCooldownRemaining = attackCooldown;
-            }
+        if (target != null) {
+            // Enemy found — stop and face them
+            isEngagingTarget = true;
+            currentTarget = target;
+            entity.getNavigation().stop();
+            entity.lookAtEntity(target, 30.0f, 30.0f);
+            // Combat is handled by CombatSystem.tickMobCombat()
         } else {
-            state = MobState.ADVANCING;
+            // No enemy — advance along waypoints
+            isEngagingTarget = false;
+            currentTarget = null;
+            advanceAlongWaypoints();
         }
-    }
 
-    private void tickRetreating(ServerWorld world, Entity entity, List<ArenaMob> allMobs) {
-        double distToHome = entity.getBlockPos().getSquaredDistance(startSlotPos);
-        if (distToHome <= 2.0 * 2.0) {
-            state = MobState.IDLE;
-            return;
-        }
-        moveToward(entity, Vec3d.ofCenter(startSlotPos));
+        // Stuck detection
+        checkStuck();
     }
 
     /**
-     * Deal damage by setting entity health directly.
+     * Clamp mob position to lane boundaries.
+     * Called every tick to prevent mobs from wandering off.
      */
-    public void takeDamage(double amount, ServerWorld world) {
-        Entity e = getEntity(world);
-        if (e instanceof LivingEntity living) {
-            float newHealth = Math.max(0, living.getHealth() - (float) amount);
-            living.setHealth(newHealth);
-            if (newHealth <= 0) {
-                markDead();
-                living.kill();
-            }
+    private void enforceLaneBounds() {
+        Vec3d pos = entity.getPos();
+        Vec3d clamped = lane.clampToLane(pos);
+
+        if (clamped.squaredDistanceTo(pos) > 0.01) {
+            entity.setPosition(clamped.x, entity.getY(), clamped.z);
         }
     }
 
-    private void markDead() {
-        markedDead = true;
-        state = MobState.DEAD;
-    }
+    /**
+     * Navigate to the next waypoint.
+     */
+    private void advanceAlongWaypoints() {
+        if (waypoints.isEmpty() || currentWaypointIndex >= waypoints.size()) return;
 
-    public Entity getEntity(ServerWorld world) {
-        if (entityId == null) return null;
-        return world.getEntity(entityId);
-    }
+        Vec3d target = waypoints.get(currentWaypointIndex);
+        double distSq = entity.getPos().squaredDistanceTo(target);
 
-    public void removeEntity(ServerWorld world) {
-        Entity e = getEntity(world);
-        if (e != null) e.discard();
-    }
-
-    // === Movement ===
-
-    private void moveTowardWaypoint(Entity entity) {
-        if (waypoints == null || currentWaypointIndex >= waypoints.size()) {
-            // Reached end of waypoints
-            // Fix 4: If this mob can't attack, become idle (prevents infinite battle)
-            if (attackDamage <= 0) {
-                state = MobState.IDLE;
-            }
-            return;
-        }
-
-        BlockPos target = waypoints.get(currentWaypointIndex);
-        Vec3d targetVec = Vec3d.ofCenter(target);
-        double dx = entity.getX() - targetVec.x;
-        double dz = entity.getZ() - targetVec.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-
-        if (dist <= 1.2) {
+        // Check if we've reached the current waypoint
+        if (distSq < WAYPOINT_REACH_DIST * WAYPOINT_REACH_DIST) {
             currentWaypointIndex++;
-            if (currentWaypointIndex >= waypoints.size()) return;
+            if (currentWaypointIndex >= waypoints.size()) {
+                // Reached end of lane — stay here and fight
+                return;
+            }
             target = waypoints.get(currentWaypointIndex);
         }
-        moveToward(entity, Vec3d.ofCenter(target));
+
+        // Navigate to waypoint
+        navigateTo(target);
     }
 
     /**
-     * Move entity via requestTeleport — works with noAI and syncs to all clients.
+     * Navigate to a position using Minecraft's pathfinding.
+     * Falls back to direct movement or teleport if pathfinding fails.
      */
-    private void moveToward(Entity entity, Vec3d target) {
-        Vec3d current = entity.getPos();
-        double dx = target.x - current.x;
-        double dz = target.z - current.z;
-        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
-        if (horizontalDist < 0.05) return;
+    private void navigateTo(Vec3d target) {
+        BlockPos targetBlock = BlockPos.ofFloored(target);
 
-        double speed = moveSpeed / 20.0; // blocks per tick
-        double step = Math.min(speed, horizontalDist);
-        double nx = dx / horizontalDist;
-        double nz = dz / horizontalDist;
-
-        double newX = current.x + nx * step;
-        double newZ = current.z + nz * step;
-
-        // requestTeleport sends position to all tracking clients
-        entity.requestTeleport(newX, current.y, newZ);
-
-        // Face movement direction
-        float yaw = (float) (Math.atan2(-nx, nz) * (180.0 / Math.PI));
-        entity.setYaw(yaw);
-        if (entity instanceof LivingEntity living) {
-            living.setHeadYaw(yaw);
-            living.setBodyYaw(yaw);
+        // Try native pathfinding
+        Path path = entity.getNavigation().findPathTo(targetBlock, 1);
+        if (path != null) {
+            entity.getNavigation().startMovingAlong(path, MOVEMENT_SPEED);
+        } else {
+            // Fallback: direct movement toward target
+            Vec3d dir = target.subtract(entity.getPos()).normalize().multiply(MOVEMENT_SPEED * 0.1);
+            entity.setVelocity(dir.x, entity.getVelocity().y, dir.z);
+            entity.velocityModified = true;
         }
     }
 
-    // === Targeting ===
+    /**
+     * Find nearest enemy mob within aggro range.
+     */
+    private LivingEntity findNearestEnemy() {
+        TeamSide enemyTeam = team.opponent();
+        LivingEntity nearest = null;
+        double nearestDist = AGGRO_RANGE * AGGRO_RANGE;
 
-    private ArenaMob findNearestEnemy(ServerWorld world, Entity self, List<ArenaMob> allMobs, double range) {
-        ArenaMob nearest = null;
-        double nearestDist = range * range;
-        for (ArenaMob mob : allMobs) {
-            if (mob.getTeam() == this.team || mob.isDead()) continue;
-            Entity other = mob.getEntity(world);
-            if (other == null) continue;
-            double dist = self.squaredDistanceTo(other);
-            if (dist < nearestDist) { nearestDist = dist; nearest = mob; }
+        for (Entity e : entity.getWorld().getOtherEntities(entity, entity.getBoundingBox().expand(AGGRO_RANGE))) {
+            if (!(e instanceof LivingEntity living)) continue;
+            if (living.isDead() || living.isRemoved()) continue;
+
+            String entTeam = CombatSystem.getTag(living, CombatSystem.TAG_TEAM);
+            if (entTeam == null || !entTeam.equals(enemyTeam.name())) continue;
+
+            double dist = entity.squaredDistanceTo(living);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearest = living;
+            }
         }
+
         return nearest;
     }
 
-    private ArenaStructure findNearestEnemyStructure(Entity self, List<ArenaStructure> structures, double range) {
-        ArenaStructure nearest = null;
-        double nearestDist = range * range;
-        for (ArenaStructure s : structures) {
-            if (s.getOwner() == this.team || s.isDestroyed()) continue;
-            double dist = self.getBlockPos().getSquaredDistance(s.getPosition());
-            if (dist < nearestDist) { nearestDist = dist; nearest = s; }
+    /**
+     * Detect if mob is stuck and teleport to next waypoint if so.
+     */
+    private void checkStuck() {
+        stuckTicks++;
+        if (stuckTicks < STUCK_CHECK_INTERVAL) return;
+        stuckTicks = 0;
+
+        Vec3d currentPos = entity.getPos();
+        double moved = currentPos.squaredDistanceTo(lastCheckedPos);
+        lastCheckedPos = currentPos;
+
+        // If barely moved and not fighting, we're stuck
+        if (moved < STUCK_THRESHOLD * STUCK_THRESHOLD && !isEngagingTarget) {
+            // Teleport forward to next waypoint
+            if (currentWaypointIndex < waypoints.size()) {
+                Vec3d wp = waypoints.get(currentWaypointIndex);
+                entity.requestTeleport(wp.x, wp.y, wp.z);
+                LOGGER.debug("Mob {} teleported to waypoint {} (stuck)", entity.getType().getTranslationKey(), currentWaypointIndex);
+            }
         }
-        return nearest;
     }
 
-    private ArenaMob findMobByEntityId(List<ArenaMob> mobs, UUID entityId) {
-        for (ArenaMob mob : mobs) {
-            if (entityId.equals(mob.getEntityId())) return mob;
-        }
-        return null;
-    }
+    // ========================================================================
+    // GETTERS
+    // ========================================================================
 
-    private void updateEntityName(Entity entity, float hp) {
-        MobCardDefinition def = sourceCard.getDefinition();
-        if (def == null) return;
-        String name = def.displayName() + " Lv." + sourceCard.getLevel()
-                + " " + (int) hp + "/" + (int) maxHP;
-        Formatting color = team == TeamSide.PLAYER1 ? Formatting.BLUE : Formatting.RED;
-        entity.setCustomName(Text.literal(name).formatted(color));
+    public MobEntity getEntity() { return entity; }
+    public TeamSide getTeam() { return team; }
+    public Lane getLane() { return lane; }
+    public boolean isEngagingTarget() { return isEngagingTarget; }
+    public LivingEntity getCurrentTarget() { return currentTarget; }
+    public boolean isDead() { return entity.isDead() || entity.isRemoved(); }
+
+    /**
+     * Get the current waypoint index (progress along the lane).
+     */
+    public int getCurrentWaypointIndex() { return currentWaypointIndex; }
+
+    /**
+     * Force retarget — used for retreat command (bell ring during battle).
+     */
+    public void orderRetreat() {
+        // Reverse waypoints: go back to start
+        currentWaypointIndex = 0;
+        isEngagingTarget = false;
+        currentTarget = null;
     }
 }
