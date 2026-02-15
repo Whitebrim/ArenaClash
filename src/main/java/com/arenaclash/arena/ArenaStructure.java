@@ -58,19 +58,20 @@ public class ArenaStructure {
      * Spawn the invisible armor stand marker entity for this structure.
      */
     public void spawnMarker(ServerWorld world) {
-        ArmorStandEntity marker = new ArmorStandEntity(world, position.getX() + 0.5, position.getY(), position.getZ() + 0.5);
+        removeMarker(world); // Clean up old marker if any
+        ArmorStandEntity marker = new ArmorStandEntity(world,
+                position.getX() + 0.5, position.getY() + 1.5, position.getZ() + 0.5);
         marker.setInvisible(true);
         marker.setInvulnerable(true);
         marker.setNoGravity(true);
-        marker.setCustomName(Text.literal(
-                (type == StructureType.THRONE ? "Throne" : "Tower") + " [" + owner.name() + "]"
-        ));
         marker.setCustomNameVisible(true);
         marker.setSilent(true);
-        // Make it not interactable by players
+        marker.setSmall(true);
         marker.addCommandTag("arenaclash_structure");
+        marker.addCommandTag("arenaclash_marker");
         world.spawnEntity(marker);
         this.markerEntityId = marker.getUuid();
+        updateMarkerName(world);
     }
 
     /**
@@ -80,6 +81,7 @@ public class ArenaStructure {
         if (markerEntityId != null) {
             Entity entity = world.getEntity(markerEntityId);
             if (entity != null) entity.discard();
+            markerEntityId = null;
         }
     }
 
@@ -163,15 +165,57 @@ public class ArenaStructure {
         return associatedLane == laneId || laneId == Lane.LaneId.CENTER;
     }
 
-    private void updateMarkerName(ServerWorld world) {
-        if (markerEntityId == null) return;
-        Entity entity = world.getEntity(markerEntityId);
-        if (entity != null) {
-            String name = (type == StructureType.THRONE ? "Throne" : "Tower");
-            entity.setCustomName(Text.literal(
-                    name + " [" + owner.name() + "] HP: " + (int) currentHP + "/" + (int) maxHP
-            ));
+    /**
+     * Update the floating HP display. Called every tick by ArenaManager
+     * to ensure it's always visible and re-spawns marker if entity disappeared.
+     */
+    public void updateMarkerName(ServerWorld world) {
+        if (isDestroyed()) return;
+
+        Entity entity = markerEntityId != null ? world.getEntity(markerEntityId) : null;
+
+        // Re-spawn marker if it's gone (entity unloaded, killed, etc.)
+        if (entity == null || !entity.isAlive()) {
+            ArmorStandEntity marker = new ArmorStandEntity(world,
+                    position.getX() + 0.5, position.getY() + 1.5, position.getZ() + 0.5);
+            marker.setInvisible(true);
+            marker.setInvulnerable(true);
+            marker.setNoGravity(true);
+            marker.setCustomNameVisible(true);
+            marker.setSilent(true);
+            marker.setSmall(true);
+            marker.addCommandTag("arenaclash_structure");
+            marker.addCommandTag("arenaclash_marker");
+            world.spawnEntity(marker);
+            this.markerEntityId = marker.getUuid();
+            entity = marker;
         }
+
+        // Build colored HP display
+        String label = (type == StructureType.THRONE ? "\u265B Throne" : "\u2691 Tower");
+        String teamColor = (owner == TeamSide.PLAYER1) ? "\u00A79" : "\u00A7c"; // blue / red
+        int hp = (int) currentHP;
+        int max = (int) maxHP;
+        double pct = currentHP / maxHP;
+
+        // HP color: green > 50%, yellow > 25%, red <= 25%
+        String hpColor;
+        if (pct > 0.5) hpColor = "\u00A7a";
+        else if (pct > 0.25) hpColor = "\u00A7e";
+        else hpColor = "\u00A7c";
+
+        // Build HP bar: 10 segments
+        int filledBars = Math.max(0, (int) Math.ceil(pct * 10));
+        StringBuilder bar = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            if (i < filledBars) bar.append(hpColor).append("|");
+            else bar.append("\u00A78").append("|");
+        }
+
+        entity.setCustomName(Text.literal(
+                teamColor + label + " " + bar + " " + hpColor + hp + "\u00A77/" + max
+        ));
+        entity.setCustomNameVisible(true);
     }
 
     private void degradeBlocks(ServerWorld world) {

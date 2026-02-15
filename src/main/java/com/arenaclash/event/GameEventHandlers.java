@@ -39,15 +39,34 @@ public class GameEventHandlers {
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
-                if (!com.arenaclash.card.MobCardRegistry.isRegistered(entity.getType())) return;
+                // Fix 3: Skip baby passive animals (they shouldn't drop cards)
+                if (entity instanceof net.minecraft.entity.passive.PassiveEntity passiveEntity) {
+                    if (passiveEntity.isBaby()) return;
+                }
 
-                var def = com.arenaclash.card.MobCardRegistry.getByEntityType(entity.getType());
+                // Fix 3: Baby zombies get their own card
+                String cardId = null;
+                if (entity instanceof net.minecraft.entity.mob.ZombieEntity zombie && zombie.isBaby()) {
+                    cardId = "baby_zombie";
+                    // Make sure baby_zombie is registered
+                    if (MobCardRegistry.getById(cardId) == null) return;
+                } else {
+                    if (!MobCardRegistry.isRegistered(entity.getType())) return;
+                    var def = MobCardRegistry.getByEntityType(entity.getType());
+                    if (def == null) return;
+                    cardId = def.id();
+                }
+
+                final String finalCardId = cardId;
+                var def = MobCardRegistry.getById(finalCardId);
                 if (def == null) return;
 
                 // Check if we're on an integrated server (singleplayer)
                 if (!player.getServer().isDedicated()) {
-                    // Singleplayer: forward via bridge → client TCP → dedicated server
-                    com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(def.id());
+                    // Singleplayer: only capture kills during ArenaClash survival
+                    if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
+                    // Forward via bridge → client TCP → dedicated server
+                    com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
                     player.sendMessage(Text.literal("§a+ " + def.displayName() + " card obtained!"));
                 } else {
                     // Dedicated server: handle directly via GameManager

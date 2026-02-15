@@ -139,7 +139,7 @@ public class GameCommands {
                                         "§ePrepTime: " + cfg.preparationTimeTicks + " ticks\n" +
                                         "§eRounds: " + cfg.maxRounds + "\n" +
                                         "§eSurvival days: " + cfg.round1Days + "/" + cfg.round2Days + "/" + cfg.round3Days + "\n" +
-                                        "§eSeed: " + cfg.gameSeed + "\n" +
+                                        "§eSeed: " + (cfg.gameSeed == 0 ? "§7random (0)" : String.valueOf(cfg.gameSeed)) + "\n" +
                                         "§eLaneLength: " + cfg.arenaLaneLength + "\n" +
                                         "§eThroneHP: " + cfg.throneHP + "\n" +
                                         "§eTowerHP: " + cfg.towerHP
@@ -169,6 +169,54 @@ public class GameCommands {
                         }
                         return 1;
                     }));
+
+            // /ac reload - reload config from disk
+            root.then(literal("reload")
+                    .executes(ctx -> {
+                        GameConfig.load();
+                        ctx.getSource().sendFeedback(() -> Text.literal("§aArenaClash config reloaded from disk!"), true);
+                        // Show key values
+                        GameConfig cfg = GameConfig.get();
+                        ctx.getSource().sendFeedback(() -> Text.literal(
+                                "§7  dayDuration=" + cfg.dayDurationTicks +
+                                " prepTime=" + cfg.preparationTimeTicks +
+                                " rounds=" + cfg.maxRounds +
+                                " seed=" + (cfg.gameSeed == 0 ? "random" : cfg.gameSeed) +
+                                " throneHP=" + cfg.throneHP +
+                                " towerHP=" + cfg.towerHP
+                        ), false);
+                        return 1;
+                    }));
+
+            // /ac help - list all commands
+            root.then(literal("help")
+                    .executes(ctx -> {
+                        ctx.getSource().sendFeedback(() -> Text.literal(
+                                "§6§l=== Arena Clash Commands ===\n" +
+                                "§e/ac start §7- Start game (needs 2 TCP players)\n" +
+                                "§e/ac start <p1> <p2> §7- Start with specific players\n" +
+                                "§e/ac reset §7- Reset the current game\n" +
+                                "§e/ac reload §7- Reload config from disk\n" +
+                                "§e/ac status §7- Show game state\n" +
+                                "§e/ac cards §7- Show your card inventory\n" +
+                                "§e/ac bell §7- Ring bell (ready/retreat)\n" +
+                                "§e/ac givecard <player> <mobId> [count] §7- Give cards\n" +
+                                "§e/ac config show §7- Show all config values\n" +
+                                "§e/ac config dayDuration <ticks> §7- Set day length\n" +
+                                "§e/ac config prepTime <ticks> §7- Set prep duration\n" +
+                                "§e/ac config seed <seed> §7- Set world seed (0=random)\n" +
+                                "§e/ac help §7- This message"
+                        ), false);
+                        return 1;
+                    }));
+
+            // Also show help when running bare /ac
+            root.executes(ctx -> {
+                ctx.getSource().sendFeedback(() -> Text.literal(
+                        "§6Arena Clash §7- Use §e/ac help §7for command list"
+                ), false);
+                return 1;
+            });
 
             dispatcher.register(root);
         });

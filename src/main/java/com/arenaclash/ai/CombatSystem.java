@@ -19,6 +19,8 @@ public class CombatSystem {
 
     public static void performAttack(ArenaMob attacker, ArenaMob defender, ServerWorld world) {
         if (attacker.isDead() || defender.isDead()) return;
+        // Fix 4: Don't attack if this mob deals no damage
+        if (attacker.getAttackDamage() <= 0) return;
         Entity aEntity = attacker.getEntity(world);
         Entity dEntity = defender.getEntity(world);
         if (aEntity == null || dEntity == null) return;
@@ -31,6 +33,8 @@ public class CombatSystem {
 
     public static void attackStructure(ArenaMob attacker, ArenaStructure structure, ServerWorld world) {
         if (attacker.isDead() || structure.isDestroyed()) return;
+        // Fix 4: Don't attack structure if this mob deals no damage
+        if (attacker.getAttackDamage() <= 0) return;
         structure.damage(attacker.getAttackDamage(), world);
         spawnDamageParticles(world, Vec3d.ofCenter(structure.getPosition()));
         playAttackSound(world, Vec3d.ofCenter(structure.getPosition()));

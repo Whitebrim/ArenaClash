@@ -32,7 +32,7 @@ public class ConnectScreen extends Screen {
                 Text.literal("Server Address"));
         addressField.setMaxLength(128);
         addressField.setText(ArenaClashClient.lastServerAddress);
-        addressField.setPlaceholder(Text.literal("ip:port (e.g. play.example.com:25566)"));
+        addressField.setPlaceholder(Text.literal("input ip address please"));
         addDrawableChild(addressField);
 
         // Connect button
@@ -66,8 +66,10 @@ public class ConnectScreen extends Screen {
 
         // Parse host:port
         String host;
-        int port = 25566; // default TCP port
+        int port;
+
         if (addr.contains(":")) {
+            // Explicit port specified
             String[] parts = addr.split(":", 2);
             host = parts[0];
             try { port = Integer.parseInt(parts[1]); } catch (NumberFormatException e) {
@@ -76,10 +78,23 @@ public class ConnectScreen extends Screen {
                 return;
             }
         } else {
-            host = addr;
+            // No explicit port — check if it's a domain name (contains letters)
+            boolean isDomain = addr.chars().anyMatch(Character::isLetter);
+            if (isDomain) {
+                // Use MC's SRV resolution for domain names
+                // _minecraft._tcp.domain → resolved host:port
+                net.minecraft.client.network.ServerAddress resolved =
+                        net.minecraft.client.network.ServerAddress.parse(addr);
+                host = resolved.getAddress();
+                port = resolved.getPort(); // SRV-resolved port as-is
+            } else {
+                // Bare IP without port — use default TCP port
+                host = addr;
+                port = 25566;
+            }
         }
 
-        statusText = "§eConnecting...";
+        statusText = "§eConnecting to " + host + ":" + port + "...";
         statusColor = 0xFFFF55;
 
         boolean success = ArenaClashClient.connectTcp(host, port);
@@ -87,7 +102,7 @@ public class ConnectScreen extends Screen {
             statusText = "§aConnected! Waiting in lobby...";
             statusColor = 0x55FF55;
         } else {
-            statusText = "§cFailed to connect!";
+            statusText = "§cFailed to connect to " + host + ":" + port + "!";
             statusColor = 0xFF4444;
         }
     }
@@ -125,13 +140,12 @@ public class ConnectScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Dark overlay without vanilla blur
-        context.fill(0, 0, width, height, 0xFF101010);
-
-        // Render widgets first (buttons, text field)
+        // 1. Render blur background + widgets (buttons, text field)
         super.render(context, mouseX, mouseY, delta);
 
-        // Title - render AFTER super so text is on top of everything
+        // 2. All text drawn AFTER super.render() so it's ON TOP of blur
+
+        // Title
         context.drawCenteredTextWithShadow(textRenderer,
                 "§6§l⚔ Arena Clash ⚔", width / 2, 20, 0xFFAA00);
         context.drawCenteredTextWithShadow(textRenderer,
@@ -147,7 +161,7 @@ public class ConnectScreen extends Screen {
 
         // Instructions
         context.drawCenteredTextWithShadow(textRenderer,
-                "§7The TCP port is usually MC port + 1 (default: 25566)",
+                "§7Domain names resolve SRV records automatically",
                 width / 2, 165, 0x666666);
         context.drawCenteredTextWithShadow(textRenderer,
                 "§7You play survival in singleplayer, arena on the server",
@@ -159,11 +173,6 @@ public class ConnectScreen extends Screen {
             context.drawCenteredTextWithShadow(textRenderer,
                     "§aSession: " + tcp.getSessionId(), width / 2, 200, 0x55FF55);
         }
-    }
-
-    @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // No-op: prevent 1.21.1 from applying blur shader
     }
 
     @Override

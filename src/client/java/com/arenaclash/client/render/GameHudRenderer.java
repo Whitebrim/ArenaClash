@@ -41,9 +41,19 @@ public class GameHudRenderer {
         // Phase name
         ctx.drawCenteredTextWithShadow(textRenderer, phaseDisplay, screenWidth / 2, barY + 3, phaseColor);
 
-        // Timer
-        int timerColor = totalSeconds <= 10 ? 0xFF4444 : 0xFFFFFF;
-        ctx.drawCenteredTextWithShadow(textRenderer, timerStr, screenWidth / 2, barY + 15, timerColor);
+        // Timer - Fix 5: hide during BATTLE unless grace period (timerTicks > 0 and small)
+        boolean showTimer = true;
+        if ("BATTLE".equals(phase) && timerTicks < 0) {
+            showTimer = false; // No timeout = no timer
+        }
+        if ("BATTLE".equals(phase) && timerTicks > 200) {
+            showTimer = false; // Not in grace period
+        }
+
+        if (showTimer && timerTicks >= 0) {
+            int timerColor = totalSeconds <= 10 ? 0xFF4444 : 0xFFFFFF;
+            ctx.drawCenteredTextWithShadow(textRenderer, timerStr, screenWidth / 2, barY + 15, timerColor);
+        }
 
         // Round indicator (top left of bar)
         ctx.drawTextWithShadow(textRenderer, "§7R" + round, barX + 4, barY + 3, 0xAAAAAA);

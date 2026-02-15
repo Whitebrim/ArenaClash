@@ -136,7 +136,8 @@ public class ArenaClashTcpServer {
                             gm2.getPhase().name(),
                             gm2.getCurrentRound(),
                             gm2.getPhaseTicksRemaining(),
-                            cardsSnbt
+                            cardsSnbt,
+                            gm2.getCurrentGameSeed()
                     ));
                     ArenaClash.LOGGER.info("[ArenaClash TCP] Sent reconnect state to {}", playerName);
                 }
@@ -189,10 +190,7 @@ public class ArenaClashTcpServer {
                 String mobId = msg.get("mobId").getAsString();
                 if (MobCardRegistry.getById(mobId) != null) {
                     session.addCard(mobId);
-                    // Acknowledge
-                    var def = MobCardRegistry.getById(mobId);
-                    session.send(SyncProtocol.serverMessage(
-                            "§a+ " + (def != null ? def.displayName() : mobId) + " card obtained!"));
+                    // Fix 8: Don't send ack message here - client already shows it locally
                     // Sync updated card list
                     syncCards(session);
                 }

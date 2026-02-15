@@ -19,7 +19,9 @@ public class ExperienceOrbMixin {
     @Inject(method = "onPlayerCollision", at = @At("HEAD"), cancellable = true)
     private void arenaclash$preventXPCollection(PlayerEntity player, CallbackInfo ci) {
         GameManager gm = GameManager.getInstance();
-        if (gm.isGameActive() && gm.getPhase() == GamePhase.SURVIVAL) {
+        boolean isSurvival = (gm.isGameActive() && gm.getPhase() == GamePhase.SURVIVAL)
+                || com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive;
+        if (isSurvival) {
             // Discard the XP orb entirely
             ((ExperienceOrbEntity)(Object)this).discard();
             ci.cancel();

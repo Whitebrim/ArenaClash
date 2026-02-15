@@ -61,7 +61,9 @@ public class OreBlockMixin {
                                                    net.minecraft.block.entity.BlockEntity blockEntity,
                                                    CallbackInfoReturnable<List<ItemStack>> cir) {
         GameManager gm = GameManager.getInstance();
-        if (!gm.isGameActive() || gm.getPhase() != GamePhase.SURVIVAL) return;
+        boolean isSurvival = (gm.isGameActive() && gm.getPhase() == GamePhase.SURVIVAL)
+                || com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive;
+        if (!isSurvival) return;
 
         Block block = state.getBlock();
         ItemStack replacement = arenaclash$getOreReplacements().get(block);

@@ -101,6 +101,11 @@ public class ArenaMob {
             var attr = mobEntity.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
             if (attr != null) attr.setBaseValue(maxHP);
             mobEntity.setHealth((float) maxHP);
+
+            // Fix 3: Set baby flag for baby_zombie cards
+            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.entity.mob.ZombieEntity zombie) {
+                zombie.setBaby(true);
+            }
         }
 
         entity.addCommandTag("arenaclash_mob");
@@ -161,20 +166,23 @@ public class ArenaMob {
     private void tickAdvancing(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         GameConfig cfg = GameConfig.get();
 
-        ArenaMob nearestEnemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
-        if (nearestEnemy != null) {
-            targetEntityId = nearestEnemy.getEntityId();
-            targetStructure = null;
-            state = MobState.FIGHTING;
-            return;
-        }
+        // Fix 4: Only engage enemies if this mob can deal damage
+        if (attackDamage > 0) {
+            ArenaMob nearestEnemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
+            if (nearestEnemy != null) {
+                targetEntityId = nearestEnemy.getEntityId();
+                targetStructure = null;
+                state = MobState.FIGHTING;
+                return;
+            }
 
-        ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, cfg.mobAggroRange);
-        if (nearestStruct != null) {
-            targetStructure = nearestStruct;
-            targetEntityId = null;
-            state = MobState.FIGHTING;
-            return;
+            ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, cfg.mobAggroRange);
+            if (nearestStruct != null) {
+                targetStructure = nearestStruct;
+                targetEntityId = null;
+                state = MobState.FIGHTING;
+                return;
+            }
         }
 
         moveTowardWaypoint(entity);
@@ -264,7 +272,14 @@ public class ArenaMob {
     // === Movement ===
 
     private void moveTowardWaypoint(Entity entity) {
-        if (waypoints == null || currentWaypointIndex >= waypoints.size()) return;
+        if (waypoints == null || currentWaypointIndex >= waypoints.size()) {
+            // Reached end of waypoints
+            // Fix 4: If this mob can't attack, become idle (prevents infinite battle)
+            if (attackDamage <= 0) {
+                state = MobState.IDLE;
+            }
+            return;
+        }
 
         BlockPos target = waypoints.get(currentWaypointIndex);
         Vec3d targetVec = Vec3d.ofCenter(target);

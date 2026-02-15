@@ -29,6 +29,7 @@ public class ArenaManager {
     private final Map<TeamSide, Integer> experienceEarned = new EnumMap<>(TeamSide.class);
 
     private boolean battleActive = false;
+    private int battleTickCount = 0;
 
     public ArenaManager() {
         throneDamageDealt.put(TeamSide.PLAYER1, 0.0);
@@ -228,6 +229,7 @@ public class ArenaManager {
     public void startBattle() {
         if (arenaWorld == null) return;
         battleActive = true;
+        battleTickCount = 0;
 
         // === Remove the glass divider ===
         removeDivider();
@@ -319,6 +321,14 @@ public class ArenaManager {
                     .toList();
             structure.tick(arenaWorld, enemies);
         }
+
+        // Refresh floating HP text every 10 ticks to keep it visible
+        if (battleTickCount % 10 == 0) {
+            for (ArenaStructure structure : structures) {
+                structure.updateMarkerName(arenaWorld);
+            }
+        }
+        battleTickCount++;
 
         // Track experience from kills
         activeMobs.stream()

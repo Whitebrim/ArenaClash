@@ -191,11 +191,176 @@ public class MobCardRegistry {
                 EntityType.ELDER_GUARDIAN, "elder_guardian", "Elder Guardian",
                 80.0, 1.5, 8.0, 40,
                 false, false, List.of(), MobCategory.BOSS));
+
+        // === SPECIAL: Baby Zombie (Fix 3) ===
+        // Uses EntityType.ZOMBIE but registered by ID only (not by entity type to avoid conflict)
+        registerById(new MobCardDefinition(
+                EntityType.ZOMBIE, "baby_zombie", "Baby Zombie",
+                20.0, 3.5, 3.0, 15,  // Faster than regular zombie, less damage
+                true, true, List.of("sword", "axe"), MobCategory.UNDEAD));
+
+        // === ADDITIONAL ANIMALS (Fix 6 - 1.21.1 complete) ===
+        register(new MobCardDefinition(
+                EntityType.CAT, "cat", "Cat",
+                10.0, 3.0, 2.0, 18,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.OCELOT, "ocelot", "Ocelot",
+                10.0, 3.2, 2.0, 18,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.HORSE, "horse", "Horse",
+                26.0, 3.5, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.DONKEY, "donkey", "Donkey",
+                22.0, 2.8, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.MULE, "mule", "Mule",
+                24.0, 3.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.RABBIT, "rabbit", "Rabbit",
+                3.0, 3.5, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.FOX, "fox", "Fox",
+                10.0, 3.0, 2.0, 18,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.PANDA, "panda", "Panda",
+                20.0, 2.0, 6.0, 30,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.TURTLE, "turtle", "Turtle",
+                30.0, 1.0, 0.0, 0,  // Slow tank, no damage
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.PARROT, "parrot", "Parrot",
+                6.0, 3.5, 1.0, 20,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.MOOSHROOM, "mooshroom", "Mooshroom",
+                10.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.POLAR_BEAR, "polar_bear", "Polar Bear",
+                30.0, 2.5, 6.0, 25,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.DOLPHIN, "dolphin", "Dolphin",
+                10.0, 3.5, 2.0, 18,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.SQUID, "squid", "Squid",
+                10.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.GLOW_SQUID, "glow_squid", "Glow Squid",
+                10.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.AXOLOTL, "axolotl", "Axolotl",
+                14.0, 2.5, 2.0, 20,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.FROG, "frog", "Frog",
+                10.0, 3.0, 1.0, 20,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.CAMEL, "camel", "Camel",
+                32.0, 2.5, 0.0, 0,  // Tanky, no damage
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.SNIFFER, "sniffer", "Sniffer",
+                14.0, 1.5, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.ARMADILLO, "armadillo", "Armadillo",
+                12.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+
+        // === ADDITIONAL HOSTILE (1.21 / 1.21.1) ===
+        register(new MobCardDefinition(
+                EntityType.BREEZE, "breeze", "Breeze",
+                30.0, 3.0, 4.0, 30,
+                false, false, List.of(), MobCategory.NEUTRAL));
+        register(new MobCardDefinition(
+                EntityType.BOGGED, "bogged", "Bogged",
+                16.0, 2.5, 3.0, 25,
+                true, true, List.of("bow", "sword"), MobCategory.UNDEAD));
+        register(new MobCardDefinition(
+                EntityType.GUARDIAN, "guardian", "Guardian",
+                30.0, 2.0, 6.0, 40,
+                false, false, List.of(), MobCategory.NEUTRAL));
+        register(new MobCardDefinition(
+                EntityType.ZOGLIN, "zoglin", "Zoglin",
+                40.0, 3.0, 8.0, 20,
+                false, false, List.of(), MobCategory.NETHER));
+        register(new MobCardDefinition(
+                EntityType.ZOMBIE_VILLAGER, "zombie_villager", "Zombie Villager",
+                20.0, 2.3, 3.0, 20,
+                true, true, List.of("sword", "axe"), MobCategory.UNDEAD));
+
+        // === UTILITY / SPECIAL NEUTRAL ===
+        register(new MobCardDefinition(
+                EntityType.ALLAY, "allay", "Allay",
+                20.0, 3.5, 0.0, 0,   // Support mob, no damage
+                false, false, List.of(), MobCategory.NEUTRAL));
+        register(new MobCardDefinition(
+                EntityType.BAT, "bat", "Bat",
+                6.0, 4.0, 0.0, 0,     // Fast, fragile, no damage
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.STRIDER, "strider", "Strider",
+                20.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.NETHER));
+        register(new MobCardDefinition(
+                EntityType.TRADER_LLAMA, "trader_llama", "Trader Llama",
+                22.0, 2.5, 1.0, 30,  // Spits
+                false, false, List.of(), MobCategory.ANIMAL));
+
+        // === SKELETON / ZOMBIE HORSES ===
+        register(new MobCardDefinition(
+                EntityType.SKELETON_HORSE, "skeleton_horse", "Skeleton Horse",
+                15.0, 4.0, 0.0, 0,   // Very fast, no damage
+                false, false, List.of(), MobCategory.UNDEAD));
+        register(new MobCardDefinition(
+                EntityType.ZOMBIE_HORSE, "zombie_horse", "Zombie Horse",
+                15.0, 3.5, 0.0, 0,
+                false, false, List.of(), MobCategory.UNDEAD));
+
+        // === AQUATIC ===
+        register(new MobCardDefinition(
+                EntityType.COD, "cod", "Cod",
+                3.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.SALMON, "salmon", "Salmon",
+                3.0, 2.5, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.PUFFERFISH, "pufferfish", "Pufferfish",
+                3.0, 2.0, 2.0, 30,   // Poisons on contact
+                false, false, List.of(), MobCategory.ANIMAL));
+        register(new MobCardDefinition(
+                EntityType.TROPICAL_FISH, "tropical_fish", "Tropical Fish",
+                3.0, 2.0, 0.0, 0,
+                false, false, List.of(), MobCategory.ANIMAL));
     }
 
     private static void register(MobCardDefinition def) {
         REGISTRY.put(def.id(), def);
         BY_ENTITY.put(def.entityType(), def);
+    }
+
+    /**
+     * Register by ID only, without mapping to entity type.
+     * Used for variant cards like baby_zombie that share EntityType with another card.
+     */
+    private static void registerById(MobCardDefinition def) {
+        REGISTRY.put(def.id(), def);
     }
 
     public static MobCardDefinition getById(String id) {

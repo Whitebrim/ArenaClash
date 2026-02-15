@@ -6,7 +6,8 @@
     "OreBlockMixin",
     "ExperienceOrbMixin",
     "ServerWorldMixin",
-    "PlayerManagerMixin"
+    "PlayerManagerMixin",
+    "DayCycleMixin"
   ],
   "client": [],
   "injectors": {

@@ -150,6 +150,9 @@ public class ArenaClashTcpClient {
                 ArenaClashClient.currentRound = currentRound;
                 ArenaClashClient.timerTicks = timerTicks;
 
+                // Fix 2: Update singleplayer bridge flag for integrated server mixins
+                com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(currentPhase);
+
                 // Fix 5: Clear deployment slot data when a new round's PREPARATION starts
                 if ("PREPARATION".equals(currentPhase)) {
                     ArenaClashClient.deploymentSlotData = null;
@@ -221,7 +224,8 @@ public class ArenaClashTcpClient {
                 int rRound = msg.get("round").getAsInt();
                 int rTimer = msg.get("timerTicks").getAsInt();
                 String rCards = msg.has("cards") ? msg.get("cards").getAsString() : "";
-                ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards);
+                long rSeed = msg.has("seed") ? msg.get("seed").getAsLong() : 0;
+                ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards, rSeed);
             }
         }
     }

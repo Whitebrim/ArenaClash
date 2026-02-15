@@ -19,6 +19,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
@@ -62,6 +63,7 @@ public class GameManager {
 
     private boolean gameActive = false;
     private long currentGameSeed = 0;
+    private int battleEndGraceTicks = -1; // Fix 5: grace period after all mobs dead before ending round
 
     // Cumulative stats across rounds
     private final Map<TeamSide, Double> cumulativeThroneDamage = new EnumMap<>(TeamSide.class);
@@ -117,6 +119,12 @@ public class GameManager {
         worldManager.createArenaWorld();
         arenaManager.initialize(worldManager.getArenaWorld());
         ArenaBuilder.buildArena(worldManager.getArenaWorld());
+
+        // Disable natural mob spawning on arena world
+        ServerWorld arenaWorld = worldManager.getArenaWorld();
+        if (arenaWorld != null) {
+            arenaWorld.getGameRules().get(net.minecraft.world.GameRules.DO_MOB_SPAWNING).set(false, server);
+        }
 
         // Reset stats
         for (TeamSide t : TeamSide.values()) {
@@ -228,7 +236,8 @@ public class GameManager {
 
     private void startBattlePhase() {
         phase = GamePhase.BATTLE;
-        phaseTicksRemaining = 20 * 60 * 5; // 5 min max
+        phaseTicksRemaining = -1; // Fix 5: No battle timeout (unlimited)
+        battleEndGraceTicks = -1; // Reset grace period
 
         arenaManager.startBattle();
 
@@ -374,6 +383,13 @@ public class GameManager {
             tcpServer.broadcast(SyncProtocol.timerSync(phaseTicksRemaining));
         }
 
+        // Keep structure HP markers updated during preparation (every 2 seconds)
+        if (phaseTicksRemaining % 40 == 0 && arenaManager != null && worldManager != null && worldManager.getArenaWorld() != null) {
+            for (var structure : arenaManager.getStructures()) {
+                structure.updateMarkerName(worldManager.getArenaWorld());
+            }
+        }
+
         // Check if both ready
         if (readyPlayers.size() >= 2) {
             tcpServer.broadcast(SyncProtocol.serverMessage("§aBoth players ready!"));
@@ -387,18 +403,43 @@ public class GameManager {
     }
 
     private void tickBattle() {
-        phaseTicksRemaining--;
+        // Fix 5: No countdown timeout for battle
         arenaManager.tickBattle();
 
+        // Check for instant-win (throne destroyed)
         ArenaManager.BattleResult result = arenaManager.checkBattleEnd();
-        if (result != null) {
+        if (result != null && result.type() == ArenaManager.BattleResult.Type.THRONE_DESTROYED) {
             endRound(result);
             return;
         }
 
-        if (phaseTicksRemaining <= 0) {
-            endRound(new ArenaManager.BattleResult(
-                    ArenaManager.BattleResult.Type.TIMEOUT, null));
+        // ALL_MOBS_DEAD: start a grace period before ending the round
+        if (result != null && result.type() == ArenaManager.BattleResult.Type.ALL_MOBS_DEAD) {
+            if (battleEndGraceTicks < 0) {
+                // Start the 10-second grace period
+                battleEndGraceTicks = 200; // 10 seconds
+                tcpServer.broadcast(SyncProtocol.serverMessage("§eAll mobs finished! Round ending in 10 seconds..."));
+                broadcastMc("§eAll mobs finished! Round ending in 10 seconds...", Formatting.YELLOW);
+                // Send grace timer to clients so they see a countdown
+                tcpServer.broadcast(SyncProtocol.timerSync(battleEndGraceTicks));
+            }
+        } else {
+            // Mobs are still active - reset grace timer if it was started
+            if (battleEndGraceTicks > 0) {
+                battleEndGraceTicks = -1;
+            }
+        }
+
+        // Tick grace period
+        if (battleEndGraceTicks > 0) {
+            battleEndGraceTicks--;
+            if (battleEndGraceTicks % 20 == 0 && battleEndGraceTicks > 0) {
+                tcpServer.broadcast(SyncProtocol.timerSync(battleEndGraceTicks));
+            }
+            if (battleEndGraceTicks <= 0) {
+                endRound(new ArenaManager.BattleResult(
+                        ArenaManager.BattleResult.Type.ALL_MOBS_DEAD, null));
+            }
         }
     }
 
@@ -602,6 +643,10 @@ public class GameManager {
 
                     worldManager.teleportToArena(player, team);
 
+                    // Allow flying on the arena so players can spectate the battle
+                    player.getAbilities().allowFlying = true;
+                    player.sendAbilitiesUpdate();
+
                     // Sync cards via MC networking too
                     TcpSession session = tcpServer.getSession(player.getUuid());
                     if (session != null) {
@@ -643,6 +688,7 @@ public class GameManager {
         gameActive = false;
         phase = GamePhase.LOBBY;
         currentRound = 0;
+        battleEndGraceTicks = -1;
         for (TeamSide t : TeamSide.values()) {
             cumulativeThroneDamage.put(t, 0.0);
             cumulativeTowersDestroyed.put(t, 0);
@@ -706,4 +752,5 @@ public class GameManager {
     }
 
     public MinecraftServer getServer() { return server; }
+    public long getCurrentGameSeed() { return currentGameSeed; }
 }

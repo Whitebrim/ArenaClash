@@ -40,7 +40,7 @@ public class ArenaClashClient implements ClientModInitializer {
 
     // TCP client
     private static ArenaClashTcpClient tcpClient;
-    public static String lastServerAddress = "localhost:25566";
+    public static String lastServerAddress = "join.brimworld.online:25522";
 
     // Scheduled actions (from TCP thread -> client thread)
     private static volatile String scheduledMcHost = null;
@@ -167,9 +167,9 @@ public class ArenaClashClient implements ClientModInitializer {
         tcpClient = new ArenaClashTcpClient();
         boolean success = tcpClient.connect(host, port, playerName, profileId);
 
-        // Save address on successful connect (Fix 8)
+        // Save address on successful connect — note: lastServerAddress is set by the caller
+        // with the raw user input, so we just persist that
         if (success) {
-            lastServerAddress = host + ":" + port;
             saveAddress();
         }
 
@@ -184,6 +184,7 @@ public class ArenaClashClient implements ClientModInitializer {
         currentPhase = "LOBBY";
         timerTicks = 0;
         currentRound = 0;
+        com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = false;
     }
 
     public static ArenaClashTcpClient getTcpClient() {
@@ -285,14 +286,35 @@ public class ArenaClashClient implements ClientModInitializer {
     }
 
     /** Reconnection state restore (Fix 7). */
-    public static void onReconnectState(String phase, int round, int timer, String cardsSnbt) {
+    public static void onReconnectState(String phase, int round, int timer, String cardsSnbt, long seed) {
         currentPhase = phase;
         currentRound = round;
         timerTicks = timer;
         if (cardsSnbt != null && !cardsSnbt.isEmpty()) {
             onCardSyncFromTcp(cardsSnbt);
         }
-        LOGGER.info("Reconnected to game: phase={}, round={}", phase, round);
+        LOGGER.info("Reconnected to game: phase={}, round={}, seed={}", phase, round, seed);
+
+        // Fix 2: Update singleplayer bridge flag
+        com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(phase);
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        // Trigger appropriate action based on current phase
+        if ("SURVIVAL".equals(phase)) {
+            // Need to be in singleplayer world
+            if (seed != 0) {
+                WorldCreationHelper.scheduleWorldCreation(seed, round);
+            }
+        } else if ("PREPARATION".equals(phase) || "BATTLE".equals(phase)) {
+            // Need to connect to MC server for arena
+            if (tcpClient != null && tcpClient.isConnected()) {
+                String host = tcpClient.getServerHost();
+                int mcPort = tcpClient.getServerMcPort();
+                if (mcPort > 0) {
+                    scheduleConnectToMcServer(host, mcPort);
+                }
+            }
+        }
     }
 
     // =========================================================================

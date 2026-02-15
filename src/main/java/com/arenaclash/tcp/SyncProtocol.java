@@ -223,12 +223,13 @@ public class SyncProtocol {
         return msg;
     }
 
-    public static JsonObject reconnectState(String phase, int round, int timerTicks, String cardsSnbt) {
+    public static JsonObject reconnectState(String phase, int round, int timerTicks, String cardsSnbt, long seed) {
         JsonObject msg = makeMessage(S2C_RECONNECT_STATE);
         msg.addProperty("phase", phase);
         msg.addProperty("round", round);
         msg.addProperty("timerTicks", timerTicks);
         msg.addProperty("cards", cardsSnbt);
+        msg.addProperty("seed", seed);
         return msg;
     }
 }

@@ -23,4 +23,17 @@ public class SingleplayerBridge {
      * Includes player messages, death messages, and achievement messages.
      */
     public static final ConcurrentLinkedQueue<String> pendingChatMessages = new ConcurrentLinkedQueue<>();
+
+    /**
+     * Set to true when the player is in an ArenaClash survival phase in singleplayer.
+     * Used by server-side mixins (ore drops, XP prevention, day cycle) to apply
+     * game rules on the integrated server, which doesn't have GameManager active.
+     */
+    public static volatile boolean survivalPhaseActive = false;
+
+    /**
+     * Day duration in ticks from config, used for accelerated day/night cycle.
+     * Default MC day = 24000 ticks. If this is e.g. 6000, time advances 4x faster.
+     */
+    public static volatile int dayDurationTicks = 6000;
 }
