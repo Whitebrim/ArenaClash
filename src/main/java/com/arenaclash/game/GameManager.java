@@ -1,5 +1,6 @@
 package com.arenaclash.game;
 
+import com.arenaclash.arena.ArenaBuilder;
 import com.arenaclash.arena.ArenaDefinition;
 import com.arenaclash.arena.ArenaManager;
 import com.arenaclash.arena.ArenaStructure;
@@ -115,37 +116,14 @@ public class GameManager {
         playerOrder.add(p1.getPlayerUuid());
         playerOrder.add(p2.getPlayerUuid());
 
-        // Initialize arena world using ArenaDefinition
+        // Initialize arena world and build
         worldManager.createArenaWorld();
         ServerWorld arenaWorld = worldManager.getArenaWorld();
 
-        // Load arena definition from JSON, or create default
-        ArenaDefinition arenaDef = null;
-        try {
-            java.nio.file.Path configDir = net.fabricmc.loader.api.FabricLoader.getInstance()
-                    .getConfigDir().resolve("arenaclash");
-            java.nio.file.Path defFile = configDir.resolve("arena_definition.json");
-            if (java.nio.file.Files.exists(defFile)) {
-                arenaDef = ArenaDefinition.load(defFile);
-                com.arenaclash.ArenaClash.LOGGER.info("Loaded arena definition from JSON");
-            }
-        } catch (Exception e) {
-            com.arenaclash.ArenaClash.LOGGER.warn("Failed to load arena_definition.json, using defaults", e);
-        }
+        // Auto-generate the arena (blocks + definition)
+        ArenaDefinition arenaDef = ArenaBuilder.buildArena(arenaWorld);
 
-        if (arenaDef == null) {
-            // Fallback: create default straight-lane arena
-            arenaDef = ArenaDefinition.createDefault(
-                    GameConfig.get().arenaCenterX,
-                    GameConfig.get().arenaCenterZ,
-                    GameConfig.get().arenaY,
-                    GameConfig.get().arenaLaneLength,
-                    12 // lane separation (default)
-            );
-            com.arenaclash.ArenaClash.LOGGER.info("Using default arena definition");
-        }
-
-        // Create ArenaManager with the loaded definition
+        // Create ArenaManager with the generated definition
         this.arenaManager = new ArenaManager(arenaWorld, arenaDef);
         if (arenaWorld != null) {
             arenaWorld.getGameRules().get(net.minecraft.world.GameRules.DO_MOB_SPAWNING).set(false, server);
@@ -702,7 +680,10 @@ public class GameManager {
     // ========================================================================
 
     public String resetGame() {
-        // In template-based system, just clean up entities and delete the world
+        // Clear arena blocks
+        if (worldManager != null && worldManager.getArenaWorld() != null) {
+            ArenaBuilder.clearArena(worldManager.getArenaWorld());
+        }
         if (arenaManager != null) {
             arenaManager.fullReset();
         }
