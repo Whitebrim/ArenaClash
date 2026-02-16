@@ -78,6 +78,11 @@ public class GameManager {
     private final Map<TeamSide, Integer> cumulativeTowersDestroyed = new EnumMap<>(TeamSide.class);
     private final Map<TeamSide, Double> cumulativeTowerDamage = new EnumMap<>(TeamSide.class);
 
+    // Snapshots of structure damage from the PREVIOUS round, to avoid double-counting
+    private final Map<TeamSide, Double> prevThroneDamageSnapshot = new EnumMap<>(TeamSide.class);
+    private final Map<TeamSide, Double> prevTowerDamageSnapshot = new EnumMap<>(TeamSide.class);
+    private final Map<TeamSide, Integer> prevTowersDestroyedSnapshot = new EnumMap<>(TeamSide.class);
+
     private GameManager() {}
 
     public static GameManager getInstance() {
@@ -139,6 +144,9 @@ public class GameManager {
             cumulativeThroneDamage.put(t, 0.0);
             cumulativeTowersDestroyed.put(t, 0);
             cumulativeTowerDamage.put(t, 0.0);
+            prevThroneDamageSnapshot.put(t, 0.0);
+            prevTowerDamageSnapshot.put(t, 0.0);
+            prevTowersDestroyedSnapshot.put(t, 0);
         }
 
         gameActive = true;
@@ -190,6 +198,9 @@ public class GameManager {
         // FIX 7: Wait for both players to create their worlds before starting timer
         worldReadyPlayers.clear();
         waitingForWorlds = true;
+
+        // Sync inventory FROM arena server TO client (for restoring in singleplayer)
+        saveAndSyncArenaInventories();
 
         // Tell clients: stay in singleplayer, survival phase started
         tcpServer.broadcast(SyncProtocol.phaseChange("SURVIVAL", currentRound, phaseTicksRemaining));
@@ -261,19 +272,38 @@ public class GameManager {
     private void endRound(ArenaManager.BattleResult result) {
         phase = GamePhase.ROUND_END;
 
-        // Accumulate damage stats
+        // Accumulate damage stats - only count NEW damage since last round
         for (TeamSide team : TeamSide.values()) {
             TeamSide opponent = team.opponent();
             ArenaStructure throne = arenaManager.getThrone(opponent);
             if (throne != null) {
-                double dmg = throne.getMaxHP() - throne.getCurrentHP();
-                cumulativeThroneDamage.merge(team, dmg, Double::sum);
+                double totalDmg = throne.getMaxHP() - throne.getCurrentHP();
+                double prevDmg = prevThroneDamageSnapshot.getOrDefault(team, 0.0);
+                double newDmg = totalDmg - prevDmg;
+                if (newDmg > 0.01) { // Epsilon to avoid floating point noise
+                    cumulativeThroneDamage.merge(team, newDmg, Double::sum);
+                }
+                prevThroneDamageSnapshot.put(team, totalDmg);
             }
+            int currentDestroyed = 0;
+            double totalTowerDmg = 0.0;
             for (ArenaStructure tower : arenaManager.getTowers(opponent)) {
-                if (tower.isDestroyed()) cumulativeTowersDestroyed.merge(team, 1, Integer::sum);
-                double dmg = tower.getMaxHP() - tower.getCurrentHP();
-                cumulativeTowerDamage.merge(team, dmg, Double::sum);
+                if (tower.isDestroyed()) currentDestroyed++;
+                totalTowerDmg += tower.getMaxHP() - tower.getCurrentHP();
             }
+            int prevDestroyed = prevTowersDestroyedSnapshot.getOrDefault(team, 0);
+            int newDestroyed = currentDestroyed - prevDestroyed;
+            if (newDestroyed > 0) {
+                cumulativeTowersDestroyed.merge(team, newDestroyed, Integer::sum);
+            }
+            prevTowersDestroyedSnapshot.put(team, currentDestroyed);
+
+            double prevTowerDmg = prevTowerDamageSnapshot.getOrDefault(team, 0.0);
+            double newTowerDmg = totalTowerDmg - prevTowerDmg;
+            if (newTowerDmg > 0.01) {
+                cumulativeTowerDamage.merge(team, newTowerDmg, Double::sum);
+            }
+            prevTowerDamageSnapshot.put(team, totalTowerDmg);
         }
 
         // Award experience
@@ -440,11 +470,13 @@ public class GameManager {
     }
 
     private TeamSide determineWinner() {
+        double epsilon = 0.01; // Ignore tiny floating point differences
+
         // Priority 1: Most throne damage
         double p1ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
         double p2ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
-        if (p1ThroneDmg > p2ThroneDmg) return TeamSide.PLAYER1;
-        if (p2ThroneDmg > p1ThroneDmg) return TeamSide.PLAYER2;
+        if (p1ThroneDmg - p2ThroneDmg > epsilon) return TeamSide.PLAYER1;
+        if (p2ThroneDmg - p1ThroneDmg > epsilon) return TeamSide.PLAYER2;
 
         // Priority 2: Most enemy towers destroyed
         int p1Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0);
@@ -455,8 +487,8 @@ public class GameManager {
         // Priority 3: Most tower damage
         double p1TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
         double p2TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
-        if (p1TowerDmg > p2TowerDmg) return TeamSide.PLAYER1;
-        if (p2TowerDmg > p1TowerDmg) return TeamSide.PLAYER2;
+        if (p1TowerDmg - p2TowerDmg > epsilon) return TeamSide.PLAYER1;
+        if (p2TowerDmg - p1TowerDmg > epsilon) return TeamSide.PLAYER2;
 
         // Draw
         return null;
@@ -532,6 +564,30 @@ public class GameManager {
 
     public boolean isGamePaused() { return gamePaused; }
 
+    /**
+     * Called when a player's pause state changes (from ESC menu).
+     * If BOTH players are paused → pause the game.
+     * If at least one player unpauses → resume the game.
+     */
+    public void updatePauseFromClients() {
+        if (!gameActive) return;
+        boolean allPaused = true;
+        for (UUID uuid : playerOrder) {
+            TcpSession session = tcpServer.getSession(uuid);
+            if (session != null && session.isAlive() && !session.isPaused()) {
+                allPaused = false;
+                break;
+            }
+        }
+        if (allPaused && !gamePaused) {
+            gamePaused = true;
+            tcpServer.broadcast(SyncProtocol.serverMessage("§e§l⏸ Game paused (both players paused)"));
+        } else if (!allPaused && gamePaused) {
+            gamePaused = false;
+            tcpServer.broadcast(SyncProtocol.serverMessage("§a§l▶ Game resumed"));
+        }
+    }
+
     // === FIX 7: World creation readiness ===
 
     /**
@@ -556,6 +612,32 @@ public class GameManager {
      */
     public void onInventorySync(TcpSession session, String itemsJson) {
         session.setSavedInventoryJson(itemsJson);
+    }
+
+    /**
+     * Save each player's MC server inventory and send it via TCP so clients
+     * can restore it when they return to singleplayer.
+     */
+    private void saveAndSyncArenaInventories() {
+        ServerWorld arenaWorld = worldManager.getArenaWorld();
+        if (arenaWorld == null) return;
+        for (UUID uuid : playerOrder) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            TcpSession session = tcpServer.getSession(uuid);
+            if (player != null && session != null) {
+                try {
+                    NbtCompound invNbt = new NbtCompound();
+                    NbtList items = new NbtList();
+                    player.getInventory().writeNbt(items);
+                    invNbt.put("Items", items);
+                    String invSnbt = invNbt.toString();
+                    session.setSavedInventoryJson(invSnbt);
+                    session.send(SyncProtocol.serverInventorySync(invSnbt));
+                } catch (Exception e) {
+                    // Ignore - player may not be on MC server
+                }
+            }
+        }
     }
 
     private void tickSurvival() {
@@ -709,8 +791,8 @@ public class GameManager {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
             TeamSide team = session.getTeam();
 
-            // FIX 3: Mirror lane for PLAYER2 so "LEFT" from their perspective maps to RIGHT in world
-            if (team == TeamSide.PLAYER2) {
+            // FIX 3: Mirror lane for PLAYER1 so "LEFT" from their perspective maps to RIGHT in world
+            if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
             }
 
@@ -741,8 +823,8 @@ public class GameManager {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
             TeamSide team = session.getTeam();
 
-            // FIX 3: Mirror lane for PLAYER2
-            if (team == TeamSide.PLAYER2) {
+            // FIX 3: Mirror lane for PLAYER1
+            if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
             }
 
@@ -846,8 +928,8 @@ public class GameManager {
                 }
                 laneNbt.put("slot_" + i, slotNbt);
             }
-            // FIX 3: Mirror lane names for PLAYER2 so their UI shows correctly
-            Lane.LaneId displayLaneId = (team == TeamSide.PLAYER2) ? mirrorLane(laneId) : laneId;
+            // FIX 3: Mirror lane names for PLAYER1 so their UI shows correctly
+            Lane.LaneId displayLaneId = (team == TeamSide.PLAYER1) ? mirrorLane(laneId) : laneId;
             slotsData.put(displayLaneId.name(), laneNbt);
         }
 
@@ -958,6 +1040,9 @@ public class GameManager {
             cumulativeThroneDamage.put(t, 0.0);
             cumulativeTowersDestroyed.put(t, 0);
             cumulativeTowerDamage.put(t, 0.0);
+            prevThroneDamageSnapshot.put(t, 0.0);
+            prevTowerDamageSnapshot.put(t, 0.0);
+            prevTowersDestroyedSnapshot.put(t, 0);
         }
 
         if (tcpServer != null) {

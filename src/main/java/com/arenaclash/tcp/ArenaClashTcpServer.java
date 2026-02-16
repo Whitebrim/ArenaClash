@@ -237,6 +237,15 @@ public class ArenaClashTcpServer {
                     server.execute(() -> gm.onPlayerWorldReady(session.getPlayerUuid()));
                 }
             }
+            case SyncProtocol.C2S_PAUSE_STATE -> {
+                boolean paused = msg.get("paused").getAsBoolean();
+                session.setPaused(paused);
+                // Check if both players are paused or at least one unpaused
+                net.minecraft.server.MinecraftServer srv = gm.getServer();
+                if (srv != null) {
+                    srv.execute(() -> gm.updatePauseFromClients());
+                }
+            }
         }
     }
 

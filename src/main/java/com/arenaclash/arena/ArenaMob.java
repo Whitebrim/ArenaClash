@@ -205,6 +205,22 @@ public class ArenaMob {
                     return;
                 }
             }
+        } else {
+            // Non-attacking mob: check if there's an enemy structure nearby and STOP
+            // instead of walking through it. The mob should not pass undamaged structures.
+            ArenaStructure blockingStruct = findNearestEnemyStructure(entity, structures, 5.0);
+            if (blockingStruct != null) {
+                Vec3d sPos = Vec3d.ofCenter(blockingStruct.getPosition());
+                double dist = hDist(entity.getPos(), sPos);
+                if (dist <= 3.5) {
+                    // Close enough to the structure - stop and idle here
+                    // Face the structure
+                    double dx = sPos.x - entity.getX(), dz = sPos.z - entity.getZ();
+                    double d = Math.sqrt(dx * dx + dz * dz);
+                    if (d > 0.01) faceDir(entity, dx / d, dz / d);
+                    return; // Don't move further
+                }
+            }
         }
         moveTowardWaypoint(entity);
 
@@ -215,6 +231,13 @@ public class ArenaMob {
                 targetStructure = nearestStruct;
                 targetEntityId = null;
                 state = MobState.FIGHTING;
+            } else if (nearestStruct != null) {
+                // Non-attacking mob at end of waypoints - just stop near structure
+                Vec3d sPos = Vec3d.ofCenter(nearestStruct.getPosition());
+                double dist = hDist(entity.getPos(), sPos);
+                if (dist > 3.5) {
+                    moveToward(entity, sPos);
+                }
             }
         }
     }

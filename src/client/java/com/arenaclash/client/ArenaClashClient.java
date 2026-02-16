@@ -58,6 +58,14 @@ public class ArenaClashClient implements ClientModInitializer {
     // FIX 7: Track whether we've sent world ready signal
     public static boolean worldReadySent = false;
 
+    // Bidirectional inventory sync: pending inventory to restore in singleplayer
+    public static volatile String pendingInventoryRestore = null;
+    // Track whether inventory was already restored this session
+    public static boolean inventoryRestored = false;
+
+    // Client pause state tracking (for auto-pause)
+    private static boolean lastPauseState = false;
+
     // Config file for persistent IP address (Fix 8)
     private static final String CONFIG_FILE = "arenaclash_client.txt";
 
@@ -137,6 +145,30 @@ public class ArenaClashClient implements ClientModInitializer {
                 worldReadySent = true;
                 tcpClient.send(SyncProtocol.makeMessage("WORLD_READY"));
             }
+
+            // Bidirectional inventory sync: restore inventory from arena when returning to singleplayer
+            if (!inventoryRestored && pendingInventoryRestore != null && client.player != null) {
+                try {
+                    NbtCompound invNbt = net.minecraft.nbt.StringNbtReader.parse(pendingInventoryRestore);
+                    net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
+                    client.player.getInventory().clear();
+                    client.player.getInventory().readNbt(items);
+                    inventoryRestored = true;
+                    pendingInventoryRestore = null;
+                } catch (Exception e) {
+                    pendingInventoryRestore = null;
+                }
+            }
+        }
+
+        // Auto-pause: check if client is paused (ESC menu) and send state changes
+        if (tcpClient != null && tcpClient.isConnected()) {
+            boolean currentlyPaused = client.isPaused()
+                    || (client.currentScreen instanceof net.minecraft.client.gui.screen.GameMenuScreen);
+            if (currentlyPaused != lastPauseState) {
+                lastPauseState = currentlyPaused;
+                tcpClient.send(SyncProtocol.pauseState(currentlyPaused));
+            }
         }
 
         // Key bindings
@@ -196,6 +228,9 @@ public class ArenaClashClient implements ClientModInitializer {
         currentPhase = "LOBBY";
         timerTicks = 0;
         currentRound = 0;
+        pendingInventoryRestore = null;
+        inventoryRestored = false;
+        lastPauseState = false;
         com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = false;
     }
 

@@ -175,6 +175,7 @@ public class ArenaClashTcpClient {
                 // FIX 7: Reset world ready flag for next survival phase
                 if ("SURVIVAL".equals(currentPhase)) {
                     ArenaClashClient.worldReadySent = false;
+                    ArenaClashClient.inventoryRestored = false;
                 }
             }
 
@@ -263,6 +264,13 @@ public class ArenaClashTcpClient {
                 String rCards = msg.has("cards") ? msg.get("cards").getAsString() : "";
                 long rSeed = msg.has("seed") ? msg.get("seed").getAsLong() : 0;
                 ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards, rSeed);
+            }
+
+            case SyncProtocol.S2C_INVENTORY_SYNC -> {
+                // Bidirectional inventory sync: server sends player's arena inventory
+                String itemsSnbt = msg.get("items").getAsString();
+                ArenaClashClient.pendingInventoryRestore = itemsSnbt;
+                LOGGER.info("Received inventory sync from server ({} chars)", itemsSnbt.length());
             }
         }
     }

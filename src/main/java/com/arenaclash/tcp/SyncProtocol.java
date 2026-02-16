@@ -35,6 +35,7 @@ public class SyncProtocol {
     public static final String S2C_CHAT_RELAY = "CHAT_RELAY";
     public static final String S2C_GAME_SEED = "GAME_SEED";
     public static final String S2C_RECONNECT_STATE = "RECONNECT_STATE";
+    public static final String S2C_INVENTORY_SYNC = "S2C_INVENTORY_SYNC";
 
     // === C2S Message Types ===
     public static final String C2S_AUTH = "AUTH";
@@ -46,6 +47,7 @@ public class SyncProtocol {
     public static final String C2S_BELL_RING = "BELL_RING";
     public static final String C2S_CHAT = "CHAT";
     public static final String C2S_WORLD_READY = "WORLD_READY";
+    public static final String C2S_PAUSE_STATE = "PAUSE_STATE";
 
     // === IO Helpers ===
 
@@ -231,6 +233,18 @@ public class SyncProtocol {
         msg.addProperty("timerTicks", timerTicks);
         msg.addProperty("cards", cardsSnbt);
         msg.addProperty("seed", seed);
+        return msg;
+    }
+
+    public static JsonObject serverInventorySync(String itemsSnbt) {
+        JsonObject msg = makeMessage(S2C_INVENTORY_SYNC);
+        msg.addProperty("items", itemsSnbt);
+        return msg;
+    }
+
+    public static JsonObject pauseState(boolean paused) {
+        JsonObject msg = makeMessage(C2S_PAUSE_STATE);
+        msg.addProperty("paused", paused);
         return msg;
     }
 }
