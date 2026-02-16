@@ -122,6 +122,30 @@ public class GameHudRenderer {
             ctx.drawCenteredTextWithShadow(textRenderer, bellHint, screenWidth / 2, bellY,
                     (bellAlpha << 24) | 0xFFFF55);
         }
+
+        // =============================================
+        // GAME OVER OVERLAY (FIX 4)
+        // =============================================
+        if ("GAME_OVER".equals(phase)) {
+            int screenHeight = client.getWindow().getScaledHeight();
+
+            // Big semi-transparent overlay
+            ctx.fill(0, screenHeight / 2 - 40, screenWidth, screenHeight / 2 + 40, 0xCC000000);
+
+            // Animated glow
+            float pulse = (float) (Math.sin(animTimer * 2) * 0.3 + 0.7);
+            int glowAlpha = (int) (pulse * 255);
+
+            ctx.drawCenteredTextWithShadow(textRenderer, "\u00A76\u00A7l\u2655 GAME OVER \u2655",
+                    screenWidth / 2, screenHeight / 2 - 20, (glowAlpha << 24) | 0xFFD700);
+
+            // Timer showing when returning
+            if (timerTicks > 0) {
+                int secs = Math.max(0, timerTicks / 20);
+                ctx.drawCenteredTextWithShadow(textRenderer, "\u00A77Returning in " + secs + "s...",
+                        screenWidth / 2, screenHeight / 2 + 10, 0xAAAAAAA);
+            }
+        }
     }
 
     // =============================================
@@ -163,6 +187,9 @@ public class GameHudRenderer {
     private static boolean shouldShowTimer(String phase, int timerTicks) {
         if ("BATTLE".equals(phase)) {
             return timerTicks > 0 && timerTicks <= 200;
+        }
+        if ("GAME_OVER".equals(phase)) {
+            return false; // Timer shown separately in the game over overlay
         }
         return timerTicks >= 0;
     }

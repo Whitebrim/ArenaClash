@@ -4,6 +4,7 @@ import com.arenaclash.card.MobCard;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
 import net.minecraft.block.Blocks;
+import net.minecraft.entity.Entity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -471,6 +472,9 @@ public class ArenaManager {
                     TeamSide killer = mob.getTeam().opponent();
                     experienceEarned.merge(killer, 1, Integer::sum);
                 });
+
+        // FIX 9: Tick floating damage numbers
+        ArenaMob.tickDamageNumbers(arenaWorld);
     }
 
     /**
@@ -526,6 +530,15 @@ public class ArenaManager {
             for (ArenaMob mob : activeMobs) {
                 mob.removeEntity(arenaWorld);
             }
+            // FIX 9: Clean up floating damage numbers
+            List<Entity> toRemove = new ArrayList<>();
+            for (Entity e : arenaWorld.iterateEntities()) {
+                if (e.getCommandTags().contains("arenaclash_dmg_number")
+                        || e.getCommandTags().contains("arenaclash_tower_arrow")) {
+                    toRemove.add(e);
+                }
+            }
+            toRemove.forEach(Entity::discard);
         }
         activeMobs.clear();
 

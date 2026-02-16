@@ -156,6 +156,25 @@ public class ArenaClashTcpClient {
                 // Fix 5: Clear deployment slot data when a new round's PREPARATION starts
                 if ("PREPARATION".equals(currentPhase)) {
                     ArenaClashClient.deploymentSlotData = null;
+
+                    // FIX 10: Send inventory sync before transitioning to arena
+                    MinecraftClient mc = MinecraftClient.getInstance();
+                    if (mc.player != null && mc.isInSingleplayer()) {
+                        try {
+                            net.minecraft.nbt.NbtCompound invNbt = new net.minecraft.nbt.NbtCompound();
+                            net.minecraft.nbt.NbtList items = new net.minecraft.nbt.NbtList();
+                            mc.player.getInventory().writeNbt(items);
+                            invNbt.put("Items", items);
+                            send(SyncProtocol.inventorySync(invNbt.toString()));
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to sync inventory", e);
+                        }
+                    }
+                }
+
+                // FIX 7: Reset world ready flag for next survival phase
+                if ("SURVIVAL".equals(currentPhase)) {
+                    ArenaClashClient.worldReadySent = false;
                 }
             }
 
@@ -193,10 +212,28 @@ public class ArenaClashTcpClient {
             case SyncProtocol.S2C_GAME_RESULT -> {
                 String winner = msg.get("winner").getAsString();
                 String details = msg.get("details").getAsString();
+                // FIX 4: Update phase to GAME_OVER for HUD
+                ArenaClashClient.currentPhase = "GAME_OVER";
+                currentPhase = "GAME_OVER";
+
                 if (client.player != null) {
-                    client.player.sendMessage(Text.literal("§6§l=== GAME OVER ==="));
-                    client.player.sendMessage(Text.literal("§eWinner: " + winner));
-                    client.player.sendMessage(Text.literal("§7" + details));
+                    String playerName = client.getSession().getUsername();
+                    boolean isWinner = winner.equals(playerName);
+                    boolean isDraw = "Draw".equals(winner);
+
+                    client.player.sendMessage(Text.literal("§6§l============================="));
+                    if (isDraw) {
+                        client.player.sendMessage(Text.literal("§e§l         DRAW!"));
+                    } else if (isWinner) {
+                        client.player.sendMessage(Text.literal("§a§l      VICTORY!"));
+                    } else {
+                        client.player.sendMessage(Text.literal("§c§l       DEFEAT"));
+                    }
+                    client.player.sendMessage(Text.literal("§eWinner: §f" + winner));
+                    if (!details.isEmpty()) {
+                        client.player.sendMessage(Text.literal("§7" + details));
+                    }
+                    client.player.sendMessage(Text.literal("§6§l============================="));
                 }
             }
 
@@ -254,5 +291,13 @@ public class ArenaClashTcpClient {
 
     public void sendChat(String message) {
         send(SyncProtocol.chatMessage(message));
+    }
+
+    public void sendWorldReady() {
+        send(SyncProtocol.makeMessage("WORLD_READY"));
+    }
+
+    public void sendInventorySync(String itemsSnbt) {
+        send(SyncProtocol.inventorySync(itemsSnbt));
     }
 }

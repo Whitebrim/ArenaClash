@@ -17,6 +17,7 @@ import com.arenaclash.world.WorldManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.EntityType;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -64,6 +65,13 @@ public class GameManager {
     private boolean gameActive = false;
     private long currentGameSeed = 0;
     private int battleEndGraceTicks = -1; // Fix 5: grace period after all mobs dead before ending round
+
+    // FIX 5: Pause state
+    private boolean gamePaused = false;
+
+    // FIX 7: World creation readiness tracking
+    private final Set<UUID> worldReadyPlayers = new HashSet<>();
+    private boolean waitingForWorlds = false;
 
     // Cumulative stats across rounds
     private final Map<TeamSide, Double> cumulativeThroneDamage = new EnumMap<>(TeamSide.class);
@@ -178,6 +186,10 @@ public class GameManager {
         GameConfig cfg = GameConfig.get();
         phaseTicksRemaining = cfg.getSurvivalDurationTicks(currentRound);
         readyPlayers.clear();
+
+        // FIX 7: Wait for both players to create their worlds before starting timer
+        worldReadyPlayers.clear();
+        waitingForWorlds = true;
 
         // Tell clients: stay in singleplayer, survival phase started
         tcpServer.broadcast(SyncProtocol.phaseChange("SURVIVAL", currentRound, phaseTicksRemaining));
@@ -313,29 +325,140 @@ public class GameManager {
 
     private void endGame(TeamSide winner) {
         phase = GamePhase.GAME_OVER;
-        gameActive = false;
+        // gameActive stays true during GAME_OVER phase for tick processing
 
         String winnerName = "Draw";
+        String loserName = "Draw";
+        UUID winnerUuid = null;
+        UUID loserUuid = null;
+
         if (winner != null && playerOrder.size() > winner.ordinal()) {
-            UUID winnerUuid = playerOrder.get(winner.ordinal());
-            TcpSession session = tcpServer.getSession(winnerUuid);
-            if (session != null) winnerName = session.getPlayerName();
+            winnerUuid = playerOrder.get(winner.ordinal());
+            loserUuid = playerOrder.get(winner.opponent().ordinal());
+            TcpSession winSession = tcpServer.getSession(winnerUuid);
+            TcpSession loseSession = tcpServer.getSession(loserUuid);
+            if (winSession != null) winnerName = winSession.getPlayerName();
+            if (loseSession != null) loserName = loseSession.getPlayerName();
         }
 
-        tcpServer.broadcast(SyncProtocol.gameResult(winnerName, ""));
+        // Build detailed result info
+        String details = buildGameResultDetails(winner);
+
+        // FIX 4: Send game result with winner/loser details for proper end screen
+        tcpServer.broadcast(SyncProtocol.gameResult(winnerName, details));
         tcpServer.broadcast(SyncProtocol.serverMessage("§6§l=== GAME OVER === Winner: " + winnerName));
-        tcpServer.broadcast(SyncProtocol.returnToSingle());
+
+        // FIX 4: Send title screen messages and spawn fireworks for winner
+        if (server != null) {
+            for (UUID uuid : playerOrder) {
+                ServerPlayerEntity player = getPlayer(uuid);
+                if (player == null) continue;
+                TeamSide playerTeam = playerTeams.get(uuid);
+
+                if (winner == null) {
+                    // Draw
+                    showTitle(player, "§e§lDRAW", "§7No clear winner");
+                } else if (playerTeam == winner) {
+                    // Winner
+                    showTitle(player, "§a§lVICTORY!", "§6You defeated " + loserName + "!");
+                    // Spawn fireworks around the winner
+                    spawnFireworks(player, 10);
+                } else {
+                    // Loser
+                    showTitle(player, "§c§lDEFEAT", "§7" + winnerName + " has won");
+                }
+            }
+        }
+
+        // Don't immediately return to singleplayer - let players see the result for 15 seconds
+        phaseTicksRemaining = 300; // 15 seconds
+
+        // Schedule return after delay (handled in tick)
+    }
+
+    private String buildGameResultDetails(TeamSide winner) {
+        StringBuilder sb = new StringBuilder();
+        double p1Throne = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
+        double p2Throne = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
+        int p1Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0);
+        int p2Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER2, 0);
+        sb.append(String.format("Throne Damage: P1=%.0f / P2=%.0f | ", p1Throne, p2Throne));
+        sb.append(String.format("Towers Destroyed: P1=%d / P2=%d", p1Towers, p2Towers));
+        return sb.toString();
+    }
+
+    private void showTitle(ServerPlayerEntity player, String title, String subtitle) {
+        if (player == null || player.isDisconnected()) return;
+        try {
+            // Use Minecraft's built-in /title command via the server
+            String playerName = player.getName().getString();
+            String titleCmd = "title " + playerName + " title " + toJsonText(title);
+            String subtitleCmd = "title " + playerName + " subtitle " + toJsonText(subtitle);
+            String timesCmd = "title " + playerName + " times 10 100 30";
+
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), timesCmd);
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), subtitleCmd);
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), titleCmd);
+        } catch (Exception e) {
+            // Fallback to chat message
+            player.sendMessage(Text.literal(title));
+            player.sendMessage(Text.literal(subtitle));
+        }
+    }
+
+    private String toJsonText(String text) {
+        // Convert §-formatted text to JSON text component
+        return "{\"text\":\"" + text.replace("\"", "\\\"") + "\"}";
+    }
+
+    private void spawnFireworks(ServerPlayerEntity player, int count) {
+        if (player == null || player.isDisconnected()) return;
+        net.minecraft.server.world.ServerWorld world = player.getServerWorld();
+        for (int i = 0; i < count; i++) {
+            double x = player.getX() + (world.getRandom().nextDouble() - 0.5) * 10;
+            double y = player.getY() + 2 + world.getRandom().nextDouble() * 5;
+            double z = player.getZ() + (world.getRandom().nextDouble() - 0.5) * 10;
+
+            // Create a simple firework rocket entity
+            net.minecraft.item.ItemStack fireworkStack = new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET);
+            net.minecraft.entity.projectile.FireworkRocketEntity firework =
+                    new net.minecraft.entity.projectile.FireworkRocketEntity(world, x, y, z, fireworkStack);
+
+            // Stagger the fireworks over time
+            final int delay = i * 10; // 0.5 seconds apart
+            final net.minecraft.entity.projectile.FireworkRocketEntity fw = firework;
+            new Thread(() -> {
+                try { Thread.sleep(delay * 50L); } catch (InterruptedException ignored) {}
+                server.execute(() -> {
+                    try { world.spawnEntity(fw); } catch (Exception ignored) {}
+                });
+            }, "ArenaClash-Firework-" + i).start();
+        }
     }
 
     private TeamSide determineWinner() {
-        double p1Score = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0) * 2
-                + cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0) * 50
-                + cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
-        double p2Score = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0) * 2
-                + cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER2, 0) * 50
-                + cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
-        if (p1Score > p2Score) return TeamSide.PLAYER1;
-        if (p2Score > p1Score) return TeamSide.PLAYER2;
+        // Priority 1: Most throne damage
+        double p1ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
+        double p2ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
+        if (p1ThroneDmg > p2ThroneDmg) return TeamSide.PLAYER1;
+        if (p2ThroneDmg > p1ThroneDmg) return TeamSide.PLAYER2;
+
+        // Priority 2: Most enemy towers destroyed
+        int p1Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0);
+        int p2Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER2, 0);
+        if (p1Towers > p2Towers) return TeamSide.PLAYER1;
+        if (p2Towers > p1Towers) return TeamSide.PLAYER2;
+
+        // Priority 3: Most tower damage
+        double p1TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
+        double p2TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
+        if (p1TowerDmg > p2TowerDmg) return TeamSide.PLAYER1;
+        if (p2TowerDmg > p1TowerDmg) return TeamSide.PLAYER2;
+
+        // Draw
         return null;
     }
 
@@ -345,13 +468,94 @@ public class GameManager {
 
     public void tick() {
         if (!gameActive) return;
+        if (gamePaused) return;
+
+        // FIX 7: If waiting for world creation, don't tick survival timer
+        if (waitingForWorlds && phase == GamePhase.SURVIVAL) {
+            return;
+        }
+
         switch (phase) {
             case SURVIVAL -> tickSurvival();
             case PREPARATION -> tickPreparation();
             case BATTLE -> tickBattle();
             case ROUND_END -> tickRoundEnd();
+            case GAME_OVER -> tickGameOver();
             default -> {}
         }
+    }
+
+    // === FIX 5: Pause/Continue/Skip commands ===
+
+    public String pauseGame() {
+        if (!gameActive) return "No game in progress!";
+        if (gamePaused) return "Game is already paused!";
+        gamePaused = true;
+        tcpServer.broadcast(SyncProtocol.serverMessage("§e§l⏸ Game paused"));
+        return "Game paused!";
+    }
+
+    public String continueGame() {
+        if (!gameActive) return "No game in progress!";
+        if (!gamePaused) return "Game is not paused!";
+        gamePaused = false;
+        tcpServer.broadcast(SyncProtocol.serverMessage("§a§l▶ Game resumed"));
+        return "Game resumed!";
+    }
+
+    public String skipPhase() {
+        if (!gameActive) return "No game in progress!";
+        switch (phase) {
+            case SURVIVAL -> {
+                waitingForWorlds = false;
+                phaseTicksRemaining = 0;
+                tcpServer.broadcast(SyncProtocol.serverMessage("§cSurvival phase skipped!"));
+                startPreparationPhase();
+                return "Skipped to preparation phase!";
+            }
+            case PREPARATION -> {
+                tcpServer.broadcast(SyncProtocol.serverMessage("§cPreparation phase skipped!"));
+                startBattlePhase();
+                return "Skipped to battle phase!";
+            }
+            case BATTLE -> {
+                tcpServer.broadcast(SyncProtocol.serverMessage("§cBattle skipped!"));
+                endRound(new ArenaManager.BattleResult(
+                        ArenaManager.BattleResult.Type.ALL_MOBS_DEAD, null));
+                return "Skipped battle!";
+            }
+            default -> {
+                return "Cannot skip this phase: " + phase;
+            }
+        }
+    }
+
+    public boolean isGamePaused() { return gamePaused; }
+
+    // === FIX 7: World creation readiness ===
+
+    /**
+     * Called when a player reports their singleplayer world is created and ready.
+     */
+    public void onPlayerWorldReady(UUID playerUuid) {
+        if (!waitingForWorlds) return;
+        worldReadyPlayers.add(playerUuid);
+        tcpServer.broadcast(SyncProtocol.serverMessage(
+                "§a" + worldReadyPlayers.size() + "/2 players ready"));
+        if (worldReadyPlayers.size() >= 2) {
+            waitingForWorlds = false;
+            tcpServer.broadcast(SyncProtocol.serverMessage("§a§lBoth worlds created! Timer starting..."));
+        }
+    }
+
+    // === FIX 10: Inventory sync ===
+
+    /**
+     * Called when a player sends their singleplayer inventory data.
+     * Stored in session for use when they join the arena.
+     */
+    public void onInventorySync(TcpSession session, String itemsJson) {
+        session.setSavedInventoryJson(itemsJson);
     }
 
     private void tickSurvival() {
@@ -450,6 +654,21 @@ public class GameManager {
         }
     }
 
+    /**
+     * FIX 4: Game over countdown - show results for 15 seconds then clean up.
+     */
+    private void tickGameOver() {
+        phaseTicksRemaining--;
+        if (phaseTicksRemaining % 20 == 0) {
+            tcpServer.broadcast(SyncProtocol.timerSync(phaseTicksRemaining));
+        }
+        if (phaseTicksRemaining <= 0) {
+            tcpServer.broadcast(SyncProtocol.returnToSingle());
+            // Game is no longer active after this point
+            gameActive = false;
+        }
+    }
+
     // ========================================================================
     // TCP MESSAGE HANDLERS (called from ArenaClashTcpServer)
     // ========================================================================
@@ -490,6 +709,11 @@ public class GameManager {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
             TeamSide team = session.getTeam();
 
+            // FIX 3: Mirror lane for PLAYER2 so "LEFT" from their perspective maps to RIGHT in world
+            if (team == TeamSide.PLAYER2) {
+                laneId = mirrorLane(laneId);
+            }
+
             MobCard card = session.getCardInventory().getCard(cardId);
             if (card == null) {
                 session.send(SyncProtocol.serverMessage("§cCard not found!"));
@@ -500,7 +724,7 @@ public class GameManager {
             if (success) {
                 session.getCardInventory().removeCard(cardId);
                 session.send(SyncProtocol.serverMessage(
-                        "§aPlaced " + card.getDefinition().displayName() + " on " + laneId));
+                        "§aPlaced " + card.getDefinition().displayName() + " on " + laneIdStr));
                 tcpServer.syncCards(session);
                 syncDeploymentSlots(session);
             } else {
@@ -515,7 +739,14 @@ public class GameManager {
         if (phase != GamePhase.PREPARATION) return;
         try {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
-            MobCard card = arenaManager.removeMob(session.getTeam(), laneId, slotIndex);
+            TeamSide team = session.getTeam();
+
+            // FIX 3: Mirror lane for PLAYER2
+            if (team == TeamSide.PLAYER2) {
+                laneId = mirrorLane(laneId);
+            }
+
+            MobCard card = arenaManager.removeMob(team, laneId, slotIndex);
             if (card != null) {
                 session.getCardInventory().addCard(card);
                 session.send(SyncProtocol.serverMessage(
@@ -526,6 +757,18 @@ public class GameManager {
         } catch (Exception e) {
             session.send(SyncProtocol.serverMessage("§cInvalid remove request"));
         }
+    }
+
+    /**
+     * FIX 3: Mirror lane IDs for PLAYER2 so their perspective matches their UI.
+     * PLAYER2 faces opposite direction, so their LEFT is world RIGHT.
+     */
+    private Lane.LaneId mirrorLane(Lane.LaneId laneId) {
+        return switch (laneId) {
+            case LEFT -> Lane.LaneId.RIGHT;
+            case RIGHT -> Lane.LaneId.LEFT;
+            case CENTER -> Lane.LaneId.CENTER;
+        };
     }
 
     public void handleTcpBellRing(TcpSession session) {
@@ -588,11 +831,12 @@ public class GameManager {
     private void syncDeploymentSlots(TcpSession session) {
         // Build slot data as JSON and send via TCP
         NbtCompound slotsData = new NbtCompound();
+        TeamSide team = session.getTeam();
         for (Lane.LaneId laneId : Lane.LaneId.values()) {
             Lane lane = arenaManager.getLanes().get(laneId);
             if (lane == null) continue;
             NbtCompound laneNbt = new NbtCompound();
-            var slots = lane.getDeploymentSlots(session.getTeam());
+            var slots = lane.getDeploymentSlots(team);
             for (int i = 0; i < slots.size(); i++) {
                 Lane.DeploymentSlot slot = slots.get(i);
                 NbtCompound slotNbt = new NbtCompound();
@@ -602,7 +846,9 @@ public class GameManager {
                 }
                 laneNbt.put("slot_" + i, slotNbt);
             }
-            slotsData.put(laneId.name(), laneNbt);
+            // FIX 3: Mirror lane names for PLAYER2 so their UI shows correctly
+            Lane.LaneId displayLaneId = (team == TeamSide.PLAYER2) ? mirrorLane(laneId) : laneId;
+            slotsData.put(displayLaneId.name(), laneNbt);
         }
 
         // Also send to MC-connected player
@@ -625,21 +871,39 @@ public class GameManager {
         if (!gameActive) return;
         TeamSide team = playerTeams.get(player.getUuid());
         if (team == null) {
-            // Player is not part of the game - don't kick them during login
-            // as that causes the disconnect packet error. Just let them be.
             player.sendMessage(Text.literal("§c[ArenaClash] You are not part of the current game."));
             return;
         }
 
-        if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE) {
-            // Delay teleport slightly to ensure connection is fully established (Fix 4)
+        if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE || phase == GamePhase.GAME_OVER) {
             server.execute(() -> {
                 try {
                     if (player.isDisconnected()) return;
 
-                    // Clear their MC inventory (they keep items in singleplayer)
-                    player.getInventory().clear();
-                    player.currentScreenHandler.sendContentUpdates();
+                    // FIX 10: Restore player inventory from singleplayer survival
+                    TcpSession session = tcpServer.getSession(player.getUuid());
+                    if (session != null) {
+                        String savedInv = session.getSavedInventoryJson();
+                        if (savedInv != null && !savedInv.isEmpty()) {
+                            try {
+                                net.minecraft.nbt.NbtCompound invNbt = net.minecraft.nbt.StringNbtReader.parse(savedInv);
+                                net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
+                                player.getInventory().clear();
+                                player.getInventory().readNbt(items);
+                                player.currentScreenHandler.sendContentUpdates();
+                            } catch (Exception e) {
+                                player.getInventory().clear();
+                                player.currentScreenHandler.sendContentUpdates();
+                            }
+                        } else {
+                            // No saved inventory - clear
+                            player.getInventory().clear();
+                            player.currentScreenHandler.sendContentUpdates();
+                        }
+                    } else {
+                        player.getInventory().clear();
+                        player.currentScreenHandler.sendContentUpdates();
+                    }
 
                     worldManager.teleportToArena(player, team);
 
@@ -648,14 +912,12 @@ public class GameManager {
                     player.sendAbilitiesUpdate();
 
                     // Sync cards via MC networking too
-                    TcpSession session = tcpServer.getSession(player.getUuid());
                     if (session != null) {
                         ServerPlayNetworking.send(player,
                                 new NetworkHandler.CardInventorySync(session.getCardInventory().toNbt()));
                         session.setConnectedToMc(true);
                     }
                 } catch (Exception e) {
-                    // Fix 4: Catch any errors during player setup to prevent crash
                     if (server != null) {
                         server.execute(() -> {
                             try {
@@ -689,6 +951,9 @@ public class GameManager {
         phase = GamePhase.LOBBY;
         currentRound = 0;
         battleEndGraceTicks = -1;
+        gamePaused = false;
+        waitingForWorlds = false;
+        worldReadyPlayers.clear();
         for (TeamSide t : TeamSide.values()) {
             cumulativeThroneDamage.put(t, 0.0);
             cumulativeTowersDestroyed.put(t, 0);

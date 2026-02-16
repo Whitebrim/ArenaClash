@@ -216,7 +216,10 @@ public class ArenaClashTcpServer {
                 gm.handleTcpBellRing(session);
             }
             case SyncProtocol.C2S_INVENTORY_SYNC -> {
-                // TODO: sync player's survival inventory for use on arena
+                // FIX 10: Store player's survival inventory for use on arena
+                String itemsJson = msg.get("items").getAsString();
+                session.setSavedInventoryJson(itemsJson);
+                gm.onInventorySync(session, itemsJson);
             }
             case SyncProtocol.C2S_CHAT -> {
                 // Fix 6: Relay chat to all other players
@@ -225,6 +228,13 @@ public class ArenaClashTcpServer {
                     if (!other.getSessionId().equals(session.getSessionId())) {
                         other.send(SyncProtocol.chatRelay(session.getPlayerName(), chatMessage));
                     }
+                }
+            }
+            case "WORLD_READY" -> {
+                // FIX 7: Player's singleplayer world is created and ready
+                net.minecraft.server.MinecraftServer server = gm.getServer();
+                if (server != null) {
+                    server.execute(() -> gm.onPlayerWorldReady(session.getPlayerUuid()));
                 }
             }
         }

@@ -6,6 +6,7 @@ import com.arenaclash.client.render.GameHudRenderer;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
 import com.arenaclash.client.world.WorldCreationHelper;
 import com.arenaclash.network.NetworkHandler;
+import com.arenaclash.tcp.SyncProtocol;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -53,6 +54,9 @@ public class ArenaClashClient implements ClientModInitializer {
 
     // Track singleplayer world name for return trips
     private static String savedSingleplayerWorld = null;
+
+    // FIX 7: Track whether we've sent world ready signal
+    public static boolean worldReadySent = false;
 
     // Config file for persistent IP address (Fix 8)
     private static final String CONFIG_FILE = "arenaclash_client.txt";
@@ -124,6 +128,14 @@ public class ArenaClashClient implements ClientModInitializer {
             if (levelName != null && levelName.startsWith(WorldCreationHelper.WORLD_NAME_PREFIX)) {
                 WorldCreationHelper.setCurrentWorldDirName(levelName);
                 savedSingleplayerWorld = levelName;
+            }
+        }
+
+        // FIX 7: Send WORLD_READY when singleplayer world is loaded and game is active
+        if (client.isInSingleplayer() && client.world != null && "SURVIVAL".equals(currentPhase)) {
+            if (!worldReadySent && tcpClient != null && tcpClient.isConnected()) {
+                worldReadySent = true;
+                tcpClient.send(SyncProtocol.makeMessage("WORLD_READY"));
             }
         }
 

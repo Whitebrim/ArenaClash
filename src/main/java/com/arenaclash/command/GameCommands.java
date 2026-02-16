@@ -66,7 +66,8 @@ public class GameCommands {
                                 "§eActive: " + gm.isGameActive() + "\n" +
                                 "§ePhase: " + gm.getPhase() + "\n" +
                                 "§eRound: " + gm.getCurrentRound() + "\n" +
-                                "§eTimer: " + (gm.getPhaseTicksRemaining() / 20) + "s"
+                                "§eTimer: " + (gm.getPhaseTicksRemaining() / 20) + "s\n" +
+                                "§ePaused: " + gm.isGamePaused()
                         ), false);
                         return 1;
                     }));
@@ -170,6 +171,30 @@ public class GameCommands {
                         return 1;
                     }));
 
+            // FIX 5: /ac pause — pause the game timer
+            root.then(literal("pause")
+                    .executes(ctx -> {
+                        String result = GameManager.getInstance().pauseGame();
+                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        return 1;
+                    }));
+
+            // FIX 5: /ac continue — resume the game timer
+            root.then(literal("continue")
+                    .executes(ctx -> {
+                        String result = GameManager.getInstance().continueGame();
+                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        return 1;
+                    }));
+
+            // FIX 5: /ac skip — skip current phase
+            root.then(literal("skip")
+                    .executes(ctx -> {
+                        String result = GameManager.getInstance().skipPhase();
+                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        return 1;
+                    }));
+
             // /ac reload - reload config from disk
             root.then(literal("reload")
                     .executes(ctx -> {
@@ -196,6 +221,9 @@ public class GameCommands {
                                 "§e/ac start §7- Start game (needs 2 TCP players)\n" +
                                 "§e/ac start <p1> <p2> §7- Start with specific players\n" +
                                 "§e/ac reset §7- Reset the current game\n" +
+                                "§e/ac pause §7- Pause the game timer\n" +
+                                "§e/ac continue §7- Resume the game timer\n" +
+                                "§e/ac skip §7- Skip current phase\n" +
                                 "§e/ac reload §7- Reload config from disk\n" +
                                 "§e/ac status §7- Show game state\n" +
                                 "§e/ac cards §7- Show your card inventory\n" +

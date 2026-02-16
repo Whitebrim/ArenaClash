@@ -23,6 +23,7 @@ public class TcpSession {
     private boolean ready = false;
     private boolean connectedToMc = false;
     private volatile boolean alive = true;
+    private String savedInventoryJson = null; // FIX 10: Saved survival inventory
 
     public TcpSession(String sessionId, String playerName, UUID playerUuid, OutputStream outputStream) {
         this.sessionId = sessionId;
@@ -44,6 +45,8 @@ public class TcpSession {
     public boolean isConnectedToMc() { return connectedToMc; }
     public void setConnectedToMc(boolean connected) { this.connectedToMc = connected; }
     public boolean isAlive() { return alive; }
+    public String getSavedInventoryJson() { return savedInventoryJson; }
+    public void setSavedInventoryJson(String json) { this.savedInventoryJson = json; }
 
     public void disconnect() {
         alive = false;

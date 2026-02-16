@@ -7,11 +7,13 @@ import com.arenaclash.game.TeamSide;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -305,6 +307,9 @@ public class ArenaMob {
         if (dmg >= 8) world.spawnParticles(ParticleTypes.CRIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 5, 0.4, 0.3, 0.4, 0.2);
         if (dmg >= 15) world.spawnParticles(ParticleTypes.ENCHANTED_HIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 8, 0.5, 0.4, 0.5, 0.3);
 
+        // FIX 9: Spawn floating damage number
+        spawnDamageNumber(world, dEnt.getPos().add(0, dEnt.getHeight() + 0.5, 0), dmg);
+
         playAttackSound(world, attacker.getPos());
     }
 
@@ -319,6 +324,9 @@ public class ArenaMob {
         world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
         world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
         world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
+
+        // FIX 9: Spawn floating damage number on structure
+        spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
     }
 
     private void playAttackSound(ServerWorld world, Vec3d pos) {
@@ -390,12 +398,15 @@ public class ArenaMob {
         if (laneBoundsSet) {
             double effectiveMinX = laneMinX + 0.3;
             double effectiveMaxX = laneMaxX + 0.7;
-            // If fighting a structure outside lane (e.g. throne), expand X bounds
-            if (state == MobState.FIGHTING && targetStructure != null) {
+            // FIX 2: Expand X bounds toward target (structure, waypoint, or move target)
+            if (targetStructure != null) {
                 double structX = targetStructure.getPosition().getX() + 0.5;
-                effectiveMinX = Math.min(effectiveMinX, structX - 1.0);
-                effectiveMaxX = Math.max(effectiveMaxX, structX + 1.0);
+                effectiveMinX = Math.min(effectiveMinX, structX - 3.0);
+                effectiveMaxX = Math.max(effectiveMaxX, structX + 3.0);
             }
+            // Also expand toward current movement target
+            effectiveMinX = Math.min(effectiveMinX, target.x - 1.0);
+            effectiveMaxX = Math.max(effectiveMaxX, target.x + 1.0);
             newX = MathHelper.clamp(newX, effectiveMinX, effectiveMaxX);
             newZ = MathHelper.clamp(newZ, laneMinZ + 0.3, laneMaxZ + 0.7);
         }
@@ -417,15 +428,23 @@ public class ArenaMob {
 
     private void enforceLaneBounds(Entity entity) {
         if (!laneBoundsSet) return;
-        // If fighting a structure (e.g. throne outside lane), relax X bounds to allow approach
-        boolean approachingStructure = (state == MobState.FIGHTING && targetStructure != null);
+        // FIX 2: When fighting or advancing toward a structure (especially throne),
+        // fully expand X bounds to allow reaching the structure
+        boolean approachingStructure = (targetStructure != null &&
+                (state == MobState.FIGHTING || state == MobState.ADVANCING));
         double effectiveMinX = laneMinX + 0.3;
         double effectiveMaxX = laneMaxX + 0.7;
         if (approachingStructure) {
-            // Expand X bounds toward the target structure
+            // Fully expand X bounds to reach the target structure
             double structX = targetStructure.getPosition().getX() + 0.5;
-            effectiveMinX = Math.min(effectiveMinX, structX - 1.0);
-            effectiveMaxX = Math.max(effectiveMaxX, structX + 1.0);
+            effectiveMinX = Math.min(effectiveMinX, structX - 3.0);
+            effectiveMaxX = Math.max(effectiveMaxX, structX + 3.0);
+        }
+        // Also expand when following waypoints that lead outside lane (e.g. toward throne)
+        if (state == MobState.ADVANCING && waypoints != null && currentWaypointIndex < waypoints.size()) {
+            BlockPos wp = waypoints.get(currentWaypointIndex);
+            effectiveMinX = Math.min(effectiveMinX, wp.getX() - 1.0);
+            effectiveMaxX = Math.max(effectiveMaxX, wp.getX() + 2.0);
         }
         double x = MathHelper.clamp(entity.getX(), effectiveMinX, effectiveMaxX);
         double z = MathHelper.clamp(entity.getZ(), laneMinZ + 0.3, laneMaxZ + 0.7);
@@ -455,8 +474,19 @@ public class ArenaMob {
         Vec3d selfPos = self.getPos();
         for (ArenaStructure s : structures) {
             if (s.getOwner() == team || s.isDestroyed()) continue;
+
+            // FIX 1: Mobs on a lane should only target structures on their own lane
+            // Towers have an associated lane; center lane mobs should NEVER target side towers
+            if (s.getType() == ArenaStructure.StructureType.TOWER) {
+                Lane.LaneId towerLane = s.getAssociatedLane();
+                if (towerLane != null && towerLane != this.lane) {
+                    // This tower is on a different lane - skip it
+                    // (Towers cover their lane + center for SHOOTING, but mobs shouldn't WALK to them)
+                    continue;
+                }
+            }
+
             Vec3d sPos = Vec3d.ofCenter(s.getPosition());
-            // Use horizontal distance only (Y difference can cause false negatives)
             double dx = selfPos.x - sPos.x;
             double dz = selfPos.z - sPos.z;
             double d = dx * dx + dz * dz;
@@ -486,5 +516,62 @@ public class ArenaMob {
     private double hDist(Vec3d a, Vec3d b) {
         double dx = a.x - b.x, dz = a.z - b.z;
         return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    /**
+     * FIX 9: Spawn a floating damage number as an armor stand that despawns after ~1s.
+     * The number floats upward and disappears.
+     */
+    public static void spawnDamageNumber(ServerWorld world, Vec3d pos, double damage) {
+        // Small random offset so overlapping hits are visible
+        double ox = (world.getRandom().nextDouble() - 0.5) * 0.5;
+        double oz = (world.getRandom().nextDouble() - 0.5) * 0.5;
+
+        ArmorStandEntity marker = new ArmorStandEntity(world, pos.x + ox, pos.y, pos.z + oz);
+        marker.setInvisible(true);
+        marker.setInvulnerable(true);
+        marker.setNoGravity(true);
+        marker.setCustomNameVisible(true);
+        marker.setSilent(true);
+        marker.setSmall(true);
+        marker.setMarker(true);
+        marker.addCommandTag("arenaclash_dmg_number");
+
+        // Color based on damage amount
+        String color;
+        if (damage >= 15) color = "\u00A7c\u00A7l"; // Red bold for big hits
+        else if (damage >= 8) color = "\u00A76";      // Orange
+        else if (damage >= 4) color = "\u00A7e";       // Yellow
+        else color = "\u00A7f";                         // White
+
+        String dmgText = String.format("%.1f", damage);
+        if (damage == Math.floor(damage)) dmgText = String.format("%.0f", damage);
+        marker.setCustomName(Text.literal(color + "-" + dmgText + " \u2764"));
+
+        world.spawnEntity(marker);
+
+        // Schedule despawn after 25 ticks (~1.25 seconds), with float-up animation
+        UUID markerId = marker.getUuid();
+        // Use a simple approach: schedule removal via the marker's age
+        marker.age = -25; // Negative age so it will be killed when it reaches positive
+    }
+
+    /**
+     * Static tick method to animate and clean up damage numbers in the world.
+     * Called from ArenaManager.tickBattle().
+     */
+    public static void tickDamageNumbers(ServerWorld world) {
+        List<ArmorStandEntity> toRemove = new ArrayList<>();
+        for (Entity e : world.iterateEntities()) {
+            if (e instanceof ArmorStandEntity as && e.getCommandTags().contains("arenaclash_dmg_number")) {
+                // Float upward
+                e.requestTeleport(e.getX(), e.getY() + 0.04, e.getZ());
+                // Despawn after being alive for a while
+                if (e.age > 0) {
+                    toRemove.add(as);
+                }
+            }
+        }
+        toRemove.forEach(Entity::discard);
     }
 }

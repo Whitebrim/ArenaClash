@@ -4,6 +4,7 @@ import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.projectile.ArrowEntity;
 import net.minecraft.item.ItemStack;
@@ -138,6 +139,7 @@ public class ArenaStructure {
 
     /**
      * Tower shoots a real Arrow entity at the target mob.
+     * FIX 8: Arrow now despawns after 30 ticks instead of bouncing.
      */
     private void shootArrowAtTarget(ServerWorld world, ArenaMob target, double damage) {
         Entity targetEntity = target.getEntity(world);
@@ -154,10 +156,21 @@ public class ArenaStructure {
         arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
         arrow.setCritical(true);
         arrow.addCommandTag("arenaclash_tower_arrow");
+        // FIX 8: Set a short life so arrows despawn quickly after visual impact
+        arrow.age = 1140; // Arrow despawns at age 1200, so this gives 60 ticks (~3 sec) before despawn
         world.spawnEntity(arrow);
 
         // Apply damage directly (arrow is visual only)
         target.takeDamage(damage, world);
+
+        // FIX 8: Show visual damage feedback on the target mob
+        if (targetEntity instanceof LivingEntity living) {
+            living.hurtTime = 10;
+            living.maxHurtTime = 10;
+        }
+
+        // FIX 9: Spawn floating damage number
+        ArenaMob.spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), damage);
 
         // Muzzle flash particles
         world.spawnParticles(ParticleTypes.FLAME, shootFrom.x, shootFrom.y, shootFrom.z, 3, 0.1, 0.1, 0.1, 0.02);
@@ -179,6 +192,13 @@ public class ArenaStructure {
                 Vec3d dir = e.getPos().subtract(center).normalize();
                 double kb = 0.6;
                 e.requestTeleport(e.getX() + dir.x * kb, e.getY(), e.getZ() + dir.z * kb);
+                // FIX 8: Show visual damage feedback
+                if (e instanceof LivingEntity living) {
+                    living.hurtTime = 10;
+                    living.maxHurtTime = 10;
+                }
+                // FIX 9: Spawn floating damage number
+                ArenaMob.spawnDamageNumber(world, e.getPos().add(0, e.getHeight() + 0.3, 0), damage);
             }
         }
 

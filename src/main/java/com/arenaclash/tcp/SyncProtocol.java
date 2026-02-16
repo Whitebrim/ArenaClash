@@ -45,6 +45,7 @@ public class SyncProtocol {
     public static final String C2S_REMOVE_CARD = "REMOVE_CARD";
     public static final String C2S_BELL_RING = "BELL_RING";
     public static final String C2S_CHAT = "CHAT";
+    public static final String C2S_WORLD_READY = "WORLD_READY";
 
     // === IO Helpers ===
 
