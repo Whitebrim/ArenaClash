@@ -1,6 +1,5 @@
 package com.arenaclash.arena;
 
-import com.arenaclash.ai.CombatSystem;
 import com.arenaclash.card.MobCard;
 import com.arenaclash.card.MobCardDefinition;
 import com.arenaclash.config.GameConfig;
@@ -9,27 +8,27 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 /**
- * Controls an arena mob with custom pathfinding and combat.
- *
- * Design:
- * - Entity HP is the source of truth (fire, fall dmg etc. work naturally)
- * - Movement via requestTeleport() each tick (works with noAI, syncs to clients)
- * - AI disabled to prevent vanilla wandering/fighting
+ * Fully rewritten arena mob with:
+ * - Proper waypoint navigation (side lane → tower → throne, center → throne)
+ * - Lane confinement (knockback clamped to lane bounds)
+ * - Vanilla-like combat with swing animations, knockback, particles
+ * - Smooth movement with proper facing
+ * - Stuck detection and recovery
+ * - Structure targeting (tower before throne on side lanes)
  */
 public class ArenaMob {
-    public enum MobState {
-        IDLE, ADVANCING, FIGHTING, RETREATING, DEAD
-    }
+    public enum MobState { IDLE, ADVANCING, FIGHTING, RETREATING, DEAD }
 
     private final UUID ownerId;
     private final TeamSide team;
@@ -41,7 +40,7 @@ public class ArenaMob {
     private MobState state = MobState.IDLE;
 
     private final double maxHP;
-    private final double moveSpeed;      // blocks per second
+    private final double moveSpeed;
     private final double attackDamage;
     private final int attackCooldown;
     private int attackCooldownRemaining = 0;
@@ -52,6 +51,15 @@ public class ArenaMob {
     private UUID targetEntityId;
     private ArenaStructure targetStructure;
     private boolean markedDead = false;
+
+    // Lane confinement bounds
+    private double laneMinX, laneMaxX, laneMinZ, laneMaxZ;
+    private boolean laneBoundsSet = false;
+
+    // Stuck detection
+    private Vec3d lastPosition;
+    private int stuckTicks = 0;
+    private static final int STUCK_THRESHOLD = 60;
 
     public ArenaMob(UUID ownerId, TeamSide team, MobCard card, Lane.LaneId lane, BlockPos startSlotPos) {
         this.ownerId = ownerId;
@@ -74,18 +82,25 @@ public class ArenaMob {
     public BlockPos getStartSlotPos() { return startSlotPos; }
     public double getMaxHP() { return maxHP; }
     public double getAttackDamage() { return attackDamage; }
+    public boolean isDead() { return markedDead || state == MobState.DEAD; }
 
     public double getCurrentHP(ServerWorld world) {
         Entity e = getEntity(world);
-        if (e instanceof LivingEntity living) return living.getHealth();
-        return 0;
+        return (e instanceof LivingEntity living) ? living.getHealth() : 0;
     }
 
-    public boolean isDead() { return markedDead || state == MobState.DEAD; }
+    public void setLaneBounds(double minX, double maxX, double minZ, double maxZ) {
+        this.laneMinX = minX;
+        this.laneMaxX = maxX;
+        this.laneMinZ = minZ;
+        this.laneMaxZ = maxZ;
+        this.laneBoundsSet = true;
+    }
 
-    /**
-     * Spawn the entity with custom HP, AI disabled, tagged for identification.
-     */
+    // ================================================================
+    // SPAWN
+    // ================================================================
+
     public void spawn(ServerWorld world, BlockPos pos) {
         MobCardDefinition def = sourceCard.getDefinition();
         if (def == null) return;
@@ -95,32 +110,31 @@ public class ArenaMob {
 
         entity.refreshPositionAndAngles(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 0, 0);
 
-        if (entity instanceof MobEntity mobEntity) {
-            mobEntity.setAiDisabled(true);
-            mobEntity.setPersistent();
-            var attr = mobEntity.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+        if (entity instanceof MobEntity mob) {
+            mob.setAiDisabled(true);
+            mob.setPersistent();
+            var attr = mob.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
             if (attr != null) attr.setBaseValue(maxHP);
-            mobEntity.setHealth((float) maxHP);
-
-            // Fix 3: Set baby flag for baby_zombie cards
-            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.entity.mob.ZombieEntity zombie) {
-                zombie.setBaby(true);
+            mob.setHealth((float) maxHP);
+            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.entity.mob.ZombieEntity z) {
+                z.setBaby(true);
             }
         }
 
         entity.addCommandTag("arenaclash_mob");
         entity.addCommandTag("team_" + team.name());
         entity.addCommandTag("lane_" + lane.name());
-        entity.setCustomNameVisible(true);
-        updateEntityName(entity, (float) maxHP);
+        entity.setCustomNameVisible(false);
+        entity.setInvulnerable(true);
 
         world.spawnEntity(entity);
         this.entityId = entity.getUuid();
         this.state = MobState.IDLE;
+        this.lastPosition = entity.getPos();
     }
 
     public void startAdvancing(List<BlockPos> waypoints) {
-        this.waypoints = waypoints;
+        this.waypoints = new ArrayList<>(waypoints);
         this.currentWaypointIndex = 0;
         this.state = MobState.ADVANCING;
     }
@@ -128,25 +142,19 @@ public class ArenaMob {
     public void startRetreating() {
         if (isDead()) return;
         this.state = MobState.RETREATING;
+        this.targetEntityId = null;
+        this.targetStructure = null;
     }
 
-    /**
-     * Main tick - called every server tick during battle.
-     */
+    // ================================================================
+    // TICK
+    // ================================================================
+
     public void tick(ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         if (isDead()) return;
-
         Entity entity = getEntity(world);
-        if (entity == null || !entity.isAlive()) {
-            markDead();
-            return;
-        }
-
-        // Check entity died from env damage (fire, cactus, etc.)
-        if (entity instanceof LivingEntity living && living.getHealth() <= 0) {
-            markDead();
-            return;
-        }
+        if (entity == null || !entity.isAlive()) { markDead(world); return; }
+        if (entity instanceof LivingEntity l && l.getHealth() <= 0) { markDead(world); return; }
 
         if (attackCooldownRemaining > 0) attackCooldownRemaining--;
 
@@ -157,213 +165,326 @@ public class ArenaMob {
             default -> {}
         }
 
-        // Update nametag with real entity HP
-        if (entity instanceof LivingEntity living) {
-            updateEntityName(entity, living.getHealth());
+        if (laneBoundsSet) enforceLaneBounds(entity);
+
+        // Stuck detection
+        if (state == MobState.ADVANCING && lastPosition != null) {
+            if (entity.getPos().squaredDistanceTo(lastPosition) < 0.01) {
+                stuckTicks++;
+                if (stuckTicks > STUCK_THRESHOLD && waypoints != null && currentWaypointIndex < waypoints.size() - 1) {
+                    currentWaypointIndex++;
+                    stuckTicks = 0;
+                }
+            } else { stuckTicks = 0; }
         }
+        lastPosition = entity.getPos();
     }
 
     private void tickAdvancing(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         GameConfig cfg = GameConfig.get();
-
-        // Fix 4: Only engage enemies if this mob can deal damage
         if (attackDamage > 0) {
-            ArenaMob nearestEnemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
-            if (nearestEnemy != null) {
-                targetEntityId = nearestEnemy.getEntityId();
+            ArenaMob enemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
+            if (enemy != null) {
+                targetEntityId = enemy.getEntityId();
                 targetStructure = null;
                 state = MobState.FIGHTING;
                 return;
             }
+            // Use much larger range for structure detection (structures are static, always visible)
+            double structureAggroRange = Math.max(cfg.mobAggroRange, 20.0);
+            ArenaStructure struct = findNearestEnemyStructure(entity, structures, structureAggroRange);
+            if (struct != null) {
+                double dist = entity.getBlockPos().getSquaredDistance(struct.getPosition());
+                // Attack if within attack approach range (close enough to start fighting)
+                if (dist <= 10.0 * 10.0) {
+                    targetStructure = struct;
+                    targetEntityId = null;
+                    state = MobState.FIGHTING;
+                    return;
+                }
+            }
+        }
+        moveTowardWaypoint(entity);
 
-            ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, cfg.mobAggroRange);
-            if (nearestStruct != null) {
+        // End of waypoints → always seek nearest enemy structure
+        if (waypoints != null && currentWaypointIndex >= waypoints.size()) {
+            ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, 100.0);
+            if (nearestStruct != null && attackDamage > 0) {
                 targetStructure = nearestStruct;
                 targetEntityId = null;
                 state = MobState.FIGHTING;
-                return;
             }
         }
-
-        moveTowardWaypoint(entity);
     }
 
     private void tickFighting(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
-        double attackRange = 2.5;
+        double atkRange = 2.5;
+        GameConfig cfg = GameConfig.get();
 
         if (targetEntityId != null) {
-            ArenaMob targetMob = findMobByEntityId(allMobs, targetEntityId);
-            if (targetMob == null || targetMob.isDead()) {
-                targetEntityId = null;
-                state = MobState.ADVANCING;
-                return;
-            }
-            Entity targetEntity = targetMob.getEntity(world);
-            if (targetEntity == null) {
-                targetEntityId = null;
-                state = MobState.ADVANCING;
-                return;
-            }
+            ArenaMob target = findMobByEntityId(allMobs, targetEntityId);
+            if (target == null || target.isDead()) { targetEntityId = null; state = MobState.ADVANCING; return; }
+            Entity tEnt = target.getEntity(world);
+            if (tEnt == null) { targetEntityId = null; state = MobState.ADVANCING; return; }
 
-            double dist = entity.squaredDistanceTo(targetEntity);
-            if (dist > attackRange * attackRange) {
-                moveToward(entity, targetEntity.getPos());
+            double dist = entity.squaredDistanceTo(tEnt);
+            if (dist > atkRange * atkRange) {
+                moveToward(entity, tEnt.getPos());
             } else if (attackCooldownRemaining <= 0) {
-                CombatSystem.performAttack(this, targetMob, world);
+                performAttack(entity, target, world);
                 attackCooldownRemaining = attackCooldown;
             }
+            faceEntity(entity, tEnt);
+
         } else if (targetStructure != null) {
-            if (targetStructure.isDestroyed()) {
-                targetStructure = null;
-                state = MobState.ADVANCING;
-                return;
-            }
-            double dist = entity.getBlockPos().getSquaredDistance(targetStructure.getPosition());
-            if (dist > attackRange * attackRange) {
-                moveToward(entity, Vec3d.ofCenter(targetStructure.getPosition()));
+            if (targetStructure.isDestroyed()) { targetStructure = null; state = MobState.ADVANCING; return; }
+            Vec3d sPos = Vec3d.ofCenter(targetStructure.getPosition());
+            double dist = entity.getPos().squaredDistanceTo(sPos);
+            // Structures are multi-block, use wider attack range
+            double structRange = atkRange + 2.5;
+            if (dist > structRange * structRange) {
+                moveToward(entity, sPos);
             } else if (attackCooldownRemaining <= 0) {
-                CombatSystem.attackStructure(this, targetStructure, world);
+                performStructureAttack(entity, targetStructure, world);
                 attackCooldownRemaining = attackCooldown;
             }
         } else {
+            ArenaMob enemy = findNearestEnemy(world, entity, allMobs, cfg.mobAggroRange);
+            if (enemy != null) { targetEntityId = enemy.getEntityId(); return; }
+            // Wide search for structures when mob has no target
+            ArenaStructure struct = findNearestEnemyStructure(entity, structures, 100.0);
+            if (struct != null) { targetStructure = struct; return; }
             state = MobState.ADVANCING;
         }
     }
 
     private void tickRetreating(ServerWorld world, Entity entity, List<ArenaMob> allMobs) {
-        double distToHome = entity.getBlockPos().getSquaredDistance(startSlotPos);
-        if (distToHome <= 2.0 * 2.0) {
-            state = MobState.IDLE;
-            return;
+        if (entity.getBlockPos().getSquaredDistance(startSlotPos) <= 4.0) { state = MobState.IDLE; return; }
+        if (attackDamage > 0) {
+            ArenaMob nearby = findNearestEnemy(world, entity, allMobs, GameConfig.get().mobAggroRange * 0.5);
+            if (nearby != null) {
+                Entity ne = nearby.getEntity(world);
+                if (ne != null && entity.squaredDistanceTo(ne) <= 6.25 && attackCooldownRemaining <= 0) {
+                    performAttack(entity, nearby, world);
+                    attackCooldownRemaining = attackCooldown;
+                }
+            }
         }
         moveToward(entity, Vec3d.ofCenter(startSlotPos));
     }
 
-    /**
-     * Deal damage by setting entity health directly.
-     */
+    // ================================================================
+    // COMBAT
+    // ================================================================
+
+    private void performAttack(Entity attacker, ArenaMob defender, ServerWorld world) {
+        if (defender.isDead() || attackDamage <= 0) return;
+        Entity dEnt = defender.getEntity(world);
+        if (dEnt == null) return;
+
+        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+
+        float dmg = (float) attackDamage;
+        defender.takeDamage(dmg, world);
+
+        // Knockback within lane bounds
+        Vec3d kbDir = dEnt.getPos().subtract(attacker.getPos()).normalize();
+        double kb = GameConfig.get().knockbackStrength;
+        double newX = dEnt.getX() + kbDir.x * kb;
+        double newZ = dEnt.getZ() + kbDir.z * kb;
+        if (defender.laneBoundsSet) {
+            newX = MathHelper.clamp(newX, defender.laneMinX + 0.3, defender.laneMaxX + 0.7);
+            newZ = MathHelper.clamp(newZ, defender.laneMinZ + 0.3, defender.laneMaxZ + 0.7);
+        }
+        dEnt.requestTeleport(newX, dEnt.getY(), newZ);
+
+        if (dEnt instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
+
+        int pCount = Math.min((int)(dmg / 2) + 1, 8);
+        world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), pCount, 0.3, 0.2, 0.3, 0.1);
+        if (dmg >= 8) world.spawnParticles(ParticleTypes.CRIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 5, 0.4, 0.3, 0.4, 0.2);
+        if (dmg >= 15) world.spawnParticles(ParticleTypes.ENCHANTED_HIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 8, 0.5, 0.4, 0.5, 0.3);
+
+        playAttackSound(world, attacker.getPos());
+    }
+
+    private void performStructureAttack(Entity attacker, ArenaStructure structure, ServerWorld world) {
+        if (structure.isDestroyed() || attackDamage <= 0) return;
+        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+
+        float dmg = (float) attackDamage;
+        structure.damage(dmg, world);
+
+        Vec3d sp = Vec3d.ofCenter(structure.getPosition()).add(0, 1, 0);
+        world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
+        world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
+        world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
+    }
+
+    private void playAttackSound(ServerWorld world, Vec3d pos) {
+        float pitch = 0.8f + world.getRandom().nextFloat() * 0.4f;
+        MobCardDefinition def = sourceCard.getDefinition();
+        if (def == null) { world.playSound(null, pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 0.8f, pitch); return; }
+        var sound = switch (def.category()) {
+            case UNDEAD -> SoundEvents.ENTITY_ZOMBIE_ATTACK_WOODEN_DOOR;
+            case GOLEM -> SoundEvents.ENTITY_IRON_GOLEM_ATTACK;
+            case BOSS -> SoundEvents.ENTITY_WARDEN_ATTACK_IMPACT;
+            case ARTHROPOD -> SoundEvents.ENTITY_SPIDER_AMBIENT;
+            default -> SoundEvents.ENTITY_PLAYER_ATTACK_STRONG;
+        };
+        world.playSound(null, pos.x, pos.y, pos.z, sound, SoundCategory.HOSTILE, 0.8f, pitch);
+    }
+
     public void takeDamage(double amount, ServerWorld world) {
         Entity e = getEntity(world);
         if (e instanceof LivingEntity living) {
-            float newHealth = Math.max(0, living.getHealth() - (float) amount);
-            living.setHealth(newHealth);
-            if (newHealth <= 0) {
-                markDead();
-                living.kill();
-            }
+            float newHP = Math.max(0, living.getHealth() - (float) amount);
+            living.setHealth(newHP);
+            living.hurtTime = 10;
+            living.maxHurtTime = 10;
+            if (newHP <= 0) markDead(world);
         }
     }
 
-    private void markDead() {
+    private void markDead(ServerWorld world) {
+        if (markedDead) return;
         markedDead = true;
         state = MobState.DEAD;
-    }
-
-    public Entity getEntity(ServerWorld world) {
-        if (entityId == null) return null;
-        return world.getEntity(entityId);
-    }
-
-    public void removeEntity(ServerWorld world) {
         Entity e = getEntity(world);
-        if (e != null) e.discard();
+        if (e != null) {
+            world.spawnParticles(ParticleTypes.SOUL, e.getX(), e.getY() + 0.5, e.getZ(), 10, 0.3, 0.5, 0.3, 0.05);
+            world.spawnParticles(ParticleTypes.SMOKE, e.getX(), e.getY() + 0.5, e.getZ(), 8, 0.3, 0.5, 0.3, 0.02);
+            world.spawnParticles(ParticleTypes.CLOUD, e.getX(), e.getY() + 0.5, e.getZ(), 5, 0.2, 0.3, 0.2, 0.03);
+            world.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.ENTITY_GENERIC_DEATH, SoundCategory.HOSTILE, 1.0f, 0.8f + world.getRandom().nextFloat() * 0.4f);
+            if (e instanceof LivingEntity l) { l.setInvulnerable(false); l.kill(); } else e.discard();
+        }
     }
 
-    // === Movement ===
+    // ================================================================
+    // MOVEMENT
+    // ================================================================
 
     private void moveTowardWaypoint(Entity entity) {
-        if (waypoints == null || currentWaypointIndex >= waypoints.size()) {
-            // Reached end of waypoints
-            // Fix 4: If this mob can't attack, become idle (prevents infinite battle)
-            if (attackDamage <= 0) {
-                state = MobState.IDLE;
-            }
-            return;
-        }
-
+        if (waypoints == null || currentWaypointIndex >= waypoints.size()) return;
         BlockPos target = waypoints.get(currentWaypointIndex);
-        Vec3d targetVec = Vec3d.ofCenter(target);
-        double dx = entity.getX() - targetVec.x;
-        double dz = entity.getZ() - targetVec.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-
-        if (dist <= 1.2) {
+        Vec3d tv = Vec3d.ofCenter(target);
+        if (hDist(entity.getPos(), tv) <= 1.5) {
             currentWaypointIndex++;
             if (currentWaypointIndex >= waypoints.size()) return;
             target = waypoints.get(currentWaypointIndex);
+            tv = Vec3d.ofCenter(target);
         }
-        moveToward(entity, Vec3d.ofCenter(target));
+        moveToward(entity, tv);
     }
 
-    /**
-     * Move entity via requestTeleport — works with noAI and syncs to all clients.
-     */
     private void moveToward(Entity entity, Vec3d target) {
-        Vec3d current = entity.getPos();
-        double dx = target.x - current.x;
-        double dz = target.z - current.z;
-        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
-        if (horizontalDist < 0.05) return;
-
-        double speed = moveSpeed / 20.0; // blocks per tick
-        double step = Math.min(speed, horizontalDist);
-        double nx = dx / horizontalDist;
-        double nz = dz / horizontalDist;
-
-        double newX = current.x + nx * step;
-        double newZ = current.z + nz * step;
-
-        // requestTeleport sends position to all tracking clients
-        entity.requestTeleport(newX, current.y, newZ);
-
-        // Face movement direction
-        float yaw = (float) (Math.atan2(-nx, nz) * (180.0 / Math.PI));
-        entity.setYaw(yaw);
-        if (entity instanceof LivingEntity living) {
-            living.setHeadYaw(yaw);
-            living.setBodyYaw(yaw);
+        Vec3d cur = entity.getPos();
+        double dx = target.x - cur.x, dz = target.z - cur.z;
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.05) return;
+        double speed = moveSpeed / 20.0;
+        double step = Math.min(speed, dist);
+        double nx = dx / dist, nz = dz / dist;
+        double newX = cur.x + nx * step;
+        double newZ = cur.z + nz * step;
+        if (laneBoundsSet) {
+            double effectiveMinX = laneMinX + 0.3;
+            double effectiveMaxX = laneMaxX + 0.7;
+            // If fighting a structure outside lane (e.g. throne), expand X bounds
+            if (state == MobState.FIGHTING && targetStructure != null) {
+                double structX = targetStructure.getPosition().getX() + 0.5;
+                effectiveMinX = Math.min(effectiveMinX, structX - 1.0);
+                effectiveMaxX = Math.max(effectiveMaxX, structX + 1.0);
+            }
+            newX = MathHelper.clamp(newX, effectiveMinX, effectiveMaxX);
+            newZ = MathHelper.clamp(newZ, laneMinZ + 0.3, laneMaxZ + 0.7);
         }
+        entity.requestTeleport(newX, cur.y, newZ);
+        faceDir(entity, nx, nz);
     }
 
-    // === Targeting ===
+    private void faceDir(Entity entity, double nx, double nz) {
+        float yaw = (float)(Math.atan2(-nx, nz) * (180.0 / Math.PI));
+        entity.setYaw(yaw);
+        if (entity instanceof LivingEntity l) { l.setHeadYaw(yaw); l.setBodyYaw(yaw); }
+    }
 
-    private ArenaMob findNearestEnemy(ServerWorld world, Entity self, List<ArenaMob> allMobs, double range) {
-        ArenaMob nearest = null;
-        double nearestDist = range * range;
-        for (ArenaMob mob : allMobs) {
-            if (mob.getTeam() == this.team || mob.isDead()) continue;
-            Entity other = mob.getEntity(world);
-            if (other == null) continue;
-            double dist = self.squaredDistanceTo(other);
-            if (dist < nearestDist) { nearestDist = dist; nearest = mob; }
+    private void faceEntity(Entity e, Entity t) {
+        double dx = t.getX() - e.getX(), dz = t.getZ() - e.getZ();
+        double d = Math.sqrt(dx * dx + dz * dz);
+        if (d > 0.01) faceDir(e, dx / d, dz / d);
+    }
+
+    private void enforceLaneBounds(Entity entity) {
+        if (!laneBoundsSet) return;
+        // If fighting a structure (e.g. throne outside lane), relax X bounds to allow approach
+        boolean approachingStructure = (state == MobState.FIGHTING && targetStructure != null);
+        double effectiveMinX = laneMinX + 0.3;
+        double effectiveMaxX = laneMaxX + 0.7;
+        if (approachingStructure) {
+            // Expand X bounds toward the target structure
+            double structX = targetStructure.getPosition().getX() + 0.5;
+            effectiveMinX = Math.min(effectiveMinX, structX - 1.0);
+            effectiveMaxX = Math.max(effectiveMaxX, structX + 1.0);
+        }
+        double x = MathHelper.clamp(entity.getX(), effectiveMinX, effectiveMaxX);
+        double z = MathHelper.clamp(entity.getZ(), laneMinZ + 0.3, laneMaxZ + 0.7);
+        if (x != entity.getX() || z != entity.getZ()) entity.requestTeleport(x, entity.getY(), z);
+    }
+
+    // ================================================================
+    // TARGETING
+    // ================================================================
+
+    private ArenaMob findNearestEnemy(ServerWorld world, Entity self, List<ArenaMob> mobs, double range) {
+        ArenaMob nearest = null; double best = range * range;
+        for (ArenaMob m : mobs) {
+            if (m.getTeam() == team || m.isDead()) continue;
+            Entity o = m.getEntity(world); if (o == null) continue;
+            double d = self.squaredDistanceTo(o);
+            if (d < best) { best = d; nearest = m; }
         }
         return nearest;
     }
 
     private ArenaStructure findNearestEnemyStructure(Entity self, List<ArenaStructure> structures, double range) {
-        ArenaStructure nearest = null;
-        double nearestDist = range * range;
+        ArenaStructure nearestTower = null;
+        ArenaStructure nearestThrone = null;
+        double bestTower = range * range;
+        double bestThrone = range * range;
+        Vec3d selfPos = self.getPos();
         for (ArenaStructure s : structures) {
-            if (s.getOwner() == this.team || s.isDestroyed()) continue;
-            double dist = self.getBlockPos().getSquaredDistance(s.getPosition());
-            if (dist < nearestDist) { nearestDist = dist; nearest = s; }
+            if (s.getOwner() == team || s.isDestroyed()) continue;
+            Vec3d sPos = Vec3d.ofCenter(s.getPosition());
+            // Use horizontal distance only (Y difference can cause false negatives)
+            double dx = selfPos.x - sPos.x;
+            double dz = selfPos.z - sPos.z;
+            double d = dx * dx + dz * dz;
+            if (s.getType() == ArenaStructure.StructureType.TOWER) {
+                if (d < bestTower) { bestTower = d; nearestTower = s; }
+            } else {
+                if (d < bestThrone) { bestThrone = d; nearestThrone = s; }
+            }
         }
-        return nearest;
+        // Prioritize towers over thrones (tower must be destroyed before attacking throne)
+        return nearestTower != null ? nearestTower : nearestThrone;
     }
 
-    private ArenaMob findMobByEntityId(List<ArenaMob> mobs, UUID entityId) {
-        for (ArenaMob mob : mobs) {
-            if (entityId.equals(mob.getEntityId())) return mob;
-        }
+    private ArenaMob findMobByEntityId(List<ArenaMob> mobs, UUID eid) {
+        for (ArenaMob m : mobs) if (eid.equals(m.getEntityId())) return m;
         return null;
     }
 
-    private void updateEntityName(Entity entity, float hp) {
-        MobCardDefinition def = sourceCard.getDefinition();
-        if (def == null) return;
-        String name = def.displayName() + " Lv." + sourceCard.getLevel()
-                + " " + (int) hp + "/" + (int) maxHP;
-        Formatting color = team == TeamSide.PLAYER1 ? Formatting.BLUE : Formatting.RED;
-        entity.setCustomName(Text.literal(name).formatted(color));
+    public Entity getEntity(ServerWorld world) {
+        return entityId == null ? null : world.getEntity(entityId);
+    }
+
+    public void removeEntity(ServerWorld world) {
+        Entity e = getEntity(world); if (e != null) e.discard();
+    }
+
+    private double hDist(Vec3d a, Vec3d b) {
+        double dx = a.x - b.x, dz = a.z - b.z;
+        return Math.sqrt(dx * dx + dz * dz);
     }
 }

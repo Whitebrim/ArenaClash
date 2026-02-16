@@ -14,15 +14,19 @@ import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
 
 /**
  * All server-side event handlers.
+ * KEY CHANGE: Bell is now a physical block interaction, not a keyboard key.
  */
 public class GameEventHandlers {
 
@@ -30,7 +34,7 @@ public class GameEventHandlers {
         registerMobDeathHandler();
         registerRespawnHandler();
         registerAttackProtection();
-        registerBlockProtection();
+        registerBlockInteraction();
         registerPlayerJoinHandler();
         registerC2SPacketHandlers();
     }
@@ -39,16 +43,13 @@ public class GameEventHandlers {
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
-                // Fix 3: Skip baby passive animals (they shouldn't drop cards)
                 if (entity instanceof net.minecraft.entity.passive.PassiveEntity passiveEntity) {
                     if (passiveEntity.isBaby()) return;
                 }
 
-                // Fix 3: Baby zombies get their own card
                 String cardId = null;
                 if (entity instanceof net.minecraft.entity.mob.ZombieEntity zombie && zombie.isBaby()) {
                     cardId = "baby_zombie";
-                    // Make sure baby_zombie is registered
                     if (MobCardRegistry.getById(cardId) == null) return;
                 } else {
                     if (!MobCardRegistry.isRegistered(entity.getType())) return;
@@ -61,15 +62,11 @@ public class GameEventHandlers {
                 var def = MobCardRegistry.getById(finalCardId);
                 if (def == null) return;
 
-                // Check if we're on an integrated server (singleplayer)
                 if (!player.getServer().isDedicated()) {
-                    // Singleplayer: only capture kills during ArenaClash survival
                     if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
-                    // Forward via bridge → client TCP → dedicated server
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
                     player.sendMessage(Text.literal("§a+ " + def.displayName() + " card obtained!"));
                 } else {
-                    // Dedicated server: handle directly via GameManager
                     GameManager gm = GameManager.getInstance();
                     if (gm.getPhase() == GamePhase.SURVIVAL) {
                         gm.onMobKilled(player, entity.getType());
@@ -79,14 +76,13 @@ public class GameEventHandlers {
         });
     }
 
-    // === Respawn → redirect to correct world ===
+    // === Respawn handler ===
     private static void registerRespawnHandler() {
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
             GameManager gm = GameManager.getInstance();
             if (!gm.isGameActive()) return;
             PlayerGameData data = gm.getPlayerData(newPlayer.getUuid());
             if (data == null) return;
-
             GamePhase phase = gm.getPhase();
             if (phase == GamePhase.SURVIVAL) {
                 gm.getWorldManager().teleportToSurvival(newPlayer, data.getTeam());
@@ -96,45 +92,85 @@ public class GameEventHandlers {
         });
     }
 
-    // === #4: Prevent players from attacking arena mobs and each other during battle ===
+    // === Prevent ALL attacks on arena mobs/structures (even by operators/creative) ===
     private static void registerAttackProtection() {
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (!(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
+
+            // Check if the entity is an arena entity - ALWAYS protect regardless of player status
+            if (entity.getCommandTags().contains("arenaclash_mob")
+                    || entity.getCommandTags().contains("arenaclash_structure")
+                    || entity.getCommandTags().contains("arenaclash_marker")) {
+                serverPlayer.sendMessage(Text.literal("§cArena entities cannot be attacked!"), true);
+                return ActionResult.FAIL;
+            }
+
+            // Also prevent attacking other players on the arena world
             GameManager gm = GameManager.getInstance();
-            if (!gm.isGameActive()) return ActionResult.PASS;
-            PlayerGameData data = gm.getPlayerData(serverPlayer.getUuid());
-            if (data == null) return ActionResult.PASS;
-
-            GamePhase phase = gm.getPhase();
-
-            // On the arena world during BATTLE or PREPARATION: prevent ALL attacks
-            ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
-            if (world == arenaWorld && (phase == GamePhase.BATTLE || phase == GamePhase.PREPARATION)) {
-                // Check if target is an arena mob or another player
-                if (entity.getCommandTags().contains("arenaclash_mob")
-                        || entity.getCommandTags().contains("arenaclash_structure")
-                        || entity instanceof ServerPlayerEntity) {
-                    serverPlayer.sendMessage(Text.literal("§cYou cannot attack during this phase!"), true);
+            if (gm.isGameActive()) {
+                ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
+                if (world == arenaWorld && entity instanceof ServerPlayerEntity) {
+                    serverPlayer.sendMessage(Text.literal("§cPvP is not allowed in the arena!"), true);
                     return ActionResult.FAIL;
                 }
             }
-
             return ActionResult.PASS;
         });
     }
 
-    // === #7: Block break/place protection on the arena ===
-    private static void registerBlockProtection() {
-        // Block breaking
+    /**
+     * Handle block interactions: bell ringing + build zone enforcement.
+     * Bell: right-click bell block near throne → toggle ready / order retreat.
+     * Build: only allowed in designated build zone behind throne during PREPARATION.
+     */
+    private static void registerBlockInteraction() {
+        // Block breaking - enforce build zones
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
             if (!(player instanceof ServerPlayerEntity serverPlayer)) return true;
-            return isBlockActionAllowed(serverPlayer, pos);
+            return isBlockActionAllowed(serverPlayer, pos, false);
         });
 
-        // Block placement
+        // Block placement / use - handle bell + enforce build zones
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (!(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
-            if (!isBlockActionAllowed(serverPlayer, hitResult.getBlockPos().offset(hitResult.getSide()))) {
+
+            GameManager gm = GameManager.getInstance();
+            if (!gm.isGameActive()) return ActionResult.PASS;
+
+            BlockPos clickedPos = hitResult.getBlockPos();
+            ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
+
+            // Check if player is on the arena world
+            if (world != arenaWorld) return ActionResult.PASS;
+
+            // Check if clicking a bell block
+            if (world.getBlockState(clickedPos).isOf(Blocks.BELL)) {
+                PlayerGameData data = gm.getPlayerData(serverPlayer.getUuid());
+                if (data == null) {
+                    serverPlayer.sendMessage(Text.literal("§cYou are not part of this game!"), true);
+                    return ActionResult.FAIL;
+                }
+
+                // Check if this bell belongs to the player's team
+                TeamSide bellTeam = gm.getArenaManager().getBellTeam(clickedPos);
+                if (bellTeam != null && bellTeam == data.getTeam()) {
+                    // Ring the bell!
+                    gm.handleBellRing(serverPlayer);
+
+                    // Play bell sound
+                    world.playSound(null, clickedPos.getX(), clickedPos.getY(), clickedPos.getZ(),
+                            SoundEvents.BLOCK_BELL_USE, SoundCategory.BLOCKS, 2.0f, 1.0f);
+
+                    return ActionResult.SUCCESS;
+                } else if (bellTeam != null) {
+                    serverPlayer.sendMessage(Text.literal("§cThis is not your bell!"), true);
+                    return ActionResult.FAIL;
+                }
+            }
+
+            // Build zone enforcement for block placement
+            BlockPos placePos = clickedPos.offset(hitResult.getSide());
+            if (!isBlockActionAllowed(serverPlayer, placePos, true)) {
                 return ActionResult.FAIL;
             }
             return ActionResult.PASS;
@@ -143,72 +179,76 @@ public class GameEventHandlers {
 
     /**
      * Check if a player is allowed to break/place at this position.
-     * Rules:
-     * - In survival worlds: always allowed
-     * - On arena during PREPARATION: allowed only in their team zone (not structures)
-     * - On arena during BATTLE: never allowed
-     * - On arena during other phases: never allowed
+     * Protects arena world from ALL players, including operators and non-game players.
      */
-    private static boolean isBlockActionAllowed(ServerPlayerEntity player, BlockPos pos) {
+    private static boolean isBlockActionAllowed(ServerPlayerEntity player, BlockPos pos, boolean isPlace) {
         GameManager gm = GameManager.getInstance();
         if (!gm.isGameActive()) return true;
 
-        PlayerGameData data = gm.getPlayerData(player.getUuid());
-        if (data == null) return true;
-
         ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
-        if (player.getServerWorld() != arenaWorld) return true; // Not on arena = allowed
+        if (arenaWorld == null || player.getServerWorld() != arenaWorld) return true;
+
+        // On arena world: check if player is part of the game
+        PlayerGameData data = gm.getPlayerData(player.getUuid());
+
+        // Non-game players (including operators) cannot modify the arena AT ALL
+        if (data == null) {
+            player.sendMessage(Text.literal("§cYou are not part of this game!"), true);
+            return false;
+        }
 
         GamePhase phase = gm.getPhase();
-        GameConfig cfg = GameConfig.get();
 
-        // During battle: no building at all
+        // During battle: no building for anyone
         if (phase == GamePhase.BATTLE || phase == GamePhase.ROUND_END || phase == GamePhase.GAME_OVER) {
             player.sendMessage(Text.literal("§cYou cannot modify the arena during battle!"), true);
             return false;
         }
 
-        // During preparation: only in your team zone
+        // During preparation: only in build zone
         if (phase == GamePhase.PREPARATION) {
-            int cz = cfg.arenaCenterZ;
-            int halfLen = cfg.arenaLaneLength / 2;
+            // Don't allow breaking bells
+            if (player.getServerWorld().getBlockState(pos).isOf(Blocks.BELL)) {
+                return false;
+            }
 
-            // P1 zone: Z < center, P2 zone: Z > center
-            if (data.getTeam() == TeamSide.PLAYER1) {
-                if (pos.getZ() >= cz) {
-                    player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
-                    return false;
-                }
-            } else {
-                if (pos.getZ() <= cz) {
-                    player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
-                    return false;
+            GameConfig cfg = GameConfig.get();
+
+            // Check build zone
+            if (cfg.buildZonesEnabled) {
+                if (!gm.getArenaManager().isInBuildZone(data.getTeam(), pos)) {
+                    int cz = cfg.arenaCenterZ;
+                    if (data.getTeam() == TeamSide.PLAYER1 && pos.getZ() >= cz) {
+                        player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
+                        return false;
+                    } else if (data.getTeam() == TeamSide.PLAYER2 && pos.getZ() <= cz) {
+                        player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
+                        return false;
+                    }
                 }
             }
 
-            // Don't allow breaking structure blocks (towers, thrones)
+            // Don't allow breaking structure blocks
             for (var structure : gm.getArenaManager().getStructures()) {
-                if (structure.getOwner() == data.getTeam() && structure.getBoundingBox().contains(pos.getX(), pos.getY(), pos.getZ())) {
-                    player.sendMessage(Text.literal("§cYou cannot modify your own structures!"), true);
+                if (structure.getBoundingBox().contains(pos.getX(), pos.getY(), pos.getZ())) {
+                    player.sendMessage(Text.literal("§cYou cannot modify arena structures!"), true);
                     return false;
                 }
             }
 
-            return true; // Allowed in your zone
+            return true;
         }
 
-        // Other phases on arena: not allowed
+        // Any other phase on arena world: deny
         return false;
     }
 
-    // === Player joins MC server → teleport to arena ===
+    // === Player joins MC server ===
     private static void registerPlayerJoinHandler() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             GameManager gm = GameManager.getInstance();
             if (gm.isGameActive()) {
-                // Fix 4: Delay by 2 ticks to let player fully load and connection stabilize
-                // This prevents the "Sending unknown packet disconnect" error
                 server.execute(() -> {
                     server.execute(() -> gm.onPlayerJoinMc(player));
                 });
@@ -247,6 +287,7 @@ public class GameEventHandlers {
                     });
                 });
 
+        // Keep RingBell packet handler for TCP-connected players
         ServerPlayNetworking.registerGlobalReceiver(NetworkHandler.RingBell.ID,
                 (payload, context) -> {
                     context.server().execute(() ->

@@ -50,7 +50,13 @@ public class GameConfig {
     public int arenaCenterZ = 0;
 
     // Networking
-    public int tcpPort = 0;                         // 0 = MC port + 1
+    public int tcpPort = 0;                       // 0 = MC port + 1
+
+    // Build zones - players can only build in their build zone during preparation
+    public boolean buildZonesEnabled = true;
+
+    // Bell interaction
+    public boolean bellToggleReady = true;        // Allow toggling ready via bell
 
     public static GameConfig get() {
         if (INSTANCE == null) load();
