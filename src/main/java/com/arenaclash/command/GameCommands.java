@@ -38,7 +38,7 @@ public class GameCommands {
                         ctx.getSource().sendFeedback(() -> Text.literal(result), true);
                         return 1;
                     })
-                    // Legacy: /ac start <player1> <player2>
+                    // /ac start <player1> <player2>
                     .then(argument("player1", EntityArgumentType.player())
                             .then(argument("player2", EntityArgumentType.player())
                                     .executes(ctx -> {
@@ -171,7 +171,7 @@ public class GameCommands {
                         return 1;
                     }));
 
-            // FIX 5: /ac pause — pause the game timer
+            // /ac pause — pause the game timer
             root.then(literal("pause")
                     .executes(ctx -> {
                         String result = GameManager.getInstance().pauseGame();
@@ -179,7 +179,7 @@ public class GameCommands {
                         return 1;
                     }));
 
-            // FIX 5: /ac continue — resume the game timer
+            // /ac continue — resume the game timer
             root.then(literal("continue")
                     .executes(ctx -> {
                         String result = GameManager.getInstance().continueGame();
@@ -187,7 +187,7 @@ public class GameCommands {
                         return 1;
                     }));
 
-            // FIX 5: /ac skip — skip current phase
+            // /ac skip — skip current phase
             root.then(literal("skip")
                     .executes(ctx -> {
                         String result = GameManager.getInstance().skipPhase();

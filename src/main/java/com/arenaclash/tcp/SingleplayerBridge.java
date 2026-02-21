@@ -19,7 +19,7 @@ public class SingleplayerBridge {
     public static final ConcurrentLinkedQueue<String> pendingMobKills = new ConcurrentLinkedQueue<>();
 
     /**
-     * Chat messages from singleplayer to forward via TCP (Fix 6).
+     * Chat messages from singleplayer to forward via TCP.
      * Includes player messages, death messages, and achievement messages.
      */
     public static final ConcurrentLinkedQueue<String> pendingChatMessages = new ConcurrentLinkedQueue<>();

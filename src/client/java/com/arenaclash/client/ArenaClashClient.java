@@ -50,12 +50,11 @@ public class ArenaClashClient implements ClientModInitializer {
 
     // Key bindings
     private static KeyBinding openCardsKey;
-    private static KeyBinding ringBellKey;
 
     // Track singleplayer world name for return trips
     private static String savedSingleplayerWorld = null;
 
-    // FIX 7: Track whether we've sent world ready signal
+    // Track whether we've sent world ready signal
     public static boolean worldReadySent = false;
 
     // Bidirectional inventory sync: pending inventory to restore in singleplayer
@@ -66,21 +65,17 @@ public class ArenaClashClient implements ClientModInitializer {
     // Client pause state tracking (for auto-pause)
     private static boolean lastPauseState = false;
 
-    // Config file for persistent IP address (Fix 8)
+    // Config file for persistent IP address 
     private static final String CONFIG_FILE = "arenaclash_client.txt";
 
     @Override
     public void onInitializeClient() {
         openCardsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.arenaclash.open_cards", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_J, "category.arenaclash"
-        ));
-        ringBellKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.arenaclash.ring_bell", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_B, "category.arenaclash"
+                GLFW.GLFW_KEY_TAB, "category.arenaclash"
         ));
 
-        // Load saved server address (Fix 8)
+        // Load saved server address 
         loadSavedAddress();
 
         registerMcPacketHandlers();
@@ -104,7 +99,7 @@ public class ArenaClashClient implements ClientModInitializer {
             }
         }
 
-        // Forward singleplayer chat messages via TCP (Fix 6)
+        // Forward singleplayer chat messages via TCP 
         if (tcpClient != null && tcpClient.isConnected()) {
             String chatMsg;
             while ((chatMsg = com.arenaclash.tcp.SingleplayerBridge.pendingChatMessages.poll()) != null) {
@@ -126,7 +121,7 @@ public class ArenaClashClient implements ClientModInitializer {
             returnToSingleplayer(client);
         }
 
-        // Handle world creation ticks (Fix 3)
+        // Handle world creation ticks 
         WorldCreationHelper.tickPending(client);
 
         // Track singleplayer world name
@@ -139,7 +134,7 @@ public class ArenaClashClient implements ClientModInitializer {
             }
         }
 
-        // FIX 7: Send WORLD_READY when singleplayer world is loaded and game is active
+        // Send WORLD_READY when singleplayer world is loaded and game is active
         if (client.isInSingleplayer() && client.world != null && "SURVIVAL".equals(currentPhase)) {
             if (!worldReadySent && tcpClient != null && tcpClient.isConnected()) {
                 worldReadySent = true;
@@ -202,15 +197,6 @@ public class ArenaClashClient implements ClientModInitializer {
                     && cardInventoryData != null) {
                 client.setScreen(new CardScreen(cardInventoryData));
             }
-        }
-
-        while (ringBellKey.wasPressed()) {
-            if (tcpClient != null && tcpClient.isConnected()) {
-                tcpClient.sendBellRing();
-            }
-            try {
-                ClientPlayNetworking.send(new NetworkHandler.RingBell());
-            } catch (Exception ignored) {}
         }
     }
 
@@ -347,7 +333,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
-    /** Chat relay from other player (Fix 6). */
+    /** Chat relay from other player . */
     public static void onChatRelayFromTcp(String sender, String message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
@@ -355,7 +341,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
-    /** Reconnection state restore (Fix 7). */
+    /** Reconnection state restore . */
     public static void onReconnectState(String phase, int round, int timer, String cardsSnbt, long seed) {
         currentPhase = phase;
         currentRound = round;
@@ -365,7 +351,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
         LOGGER.info("Reconnected to game: phase={}, round={}, seed={}", phase, round, seed);
 
-        // Fix 2: Update singleplayer bridge flag
+        // Update singleplayer bridge flag
         com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(phase);
 
         MinecraftClient client = MinecraftClient.getInstance();
@@ -388,7 +374,7 @@ public class ArenaClashClient implements ClientModInitializer {
     }
 
     // =========================================================================
-    // IP ADDRESS PERSISTENCE (Fix 8)
+    // IP ADDRESS PERSISTENCE 
     // =========================================================================
 
     private static void loadSavedAddress() {

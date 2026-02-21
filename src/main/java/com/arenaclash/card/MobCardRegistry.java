@@ -192,14 +192,14 @@ public class MobCardRegistry {
                 80.0, 1.5, 8.0, 40,
                 false, false, List.of(), MobCategory.BOSS));
 
-        // === SPECIAL: Baby Zombie (Fix 3) ===
+        // === SPECIAL: Baby Zombie ===
         // Uses EntityType.ZOMBIE but registered by ID only (not by entity type to avoid conflict)
         registerById(new MobCardDefinition(
                 EntityType.ZOMBIE, "baby_zombie", "Baby Zombie",
                 20.0, 3.5, 3.0, 15,  // Faster than regular zombie, less damage
                 true, true, List.of("sword", "axe"), MobCategory.UNDEAD));
 
-        // === ADDITIONAL ANIMALS (Fix 6 - 1.21.1 complete) ===
+        // === ADDITIONAL ANIMALS ===
         register(new MobCardDefinition(
                 EntityType.CAT, "cat", "Cat",
                 10.0, 3.0, 2.0, 18,

@@ -150,14 +150,14 @@ public class ArenaClashTcpClient {
                 ArenaClashClient.currentRound = currentRound;
                 ArenaClashClient.timerTicks = timerTicks;
 
-                // Fix 2: Update singleplayer bridge flag for integrated server mixins
+                // Update singleplayer bridge flag for integrated server mixins
                 com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(currentPhase);
 
-                // Fix 5: Clear deployment slot data when a new round's PREPARATION starts
+                // Clear deployment slot data when a new round's PREPARATION starts
                 if ("PREPARATION".equals(currentPhase)) {
                     ArenaClashClient.deploymentSlotData = null;
 
-                    // FIX 10: Send inventory sync before transitioning to arena
+                    // Send inventory sync before transitioning to arena
                     MinecraftClient mc = MinecraftClient.getInstance();
                     if (mc.player != null && mc.isInSingleplayer()) {
                         try {
@@ -172,7 +172,7 @@ public class ArenaClashTcpClient {
                     }
                 }
 
-                // FIX 7: Reset world ready flag for next survival phase
+                // Reset world ready flag for next survival phase
                 if ("SURVIVAL".equals(currentPhase)) {
                     ArenaClashClient.worldReadySent = false;
                     ArenaClashClient.inventoryRestored = false;
@@ -213,7 +213,7 @@ public class ArenaClashTcpClient {
             case SyncProtocol.S2C_GAME_RESULT -> {
                 String winner = msg.get("winner").getAsString();
                 String details = msg.get("details").getAsString();
-                // FIX 4: Update phase to GAME_OVER for HUD
+                // Update phase to GAME_OVER for HUD
                 ArenaClashClient.currentPhase = "GAME_OVER";
                 currentPhase = "GAME_OVER";
 
@@ -239,14 +239,14 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_CHAT_RELAY -> {
-                // Fix 6: Chat relay from another player
+                // Chat relay from another player
                 String sender = msg.get("sender").getAsString();
                 String chatMessage = msg.get("message").getAsString();
                 ArenaClashClient.onChatRelayFromTcp(sender, chatMessage);
             }
 
             case SyncProtocol.S2C_GAME_SEED -> {
-                // Fix 3: Receive game seed for singleplayer world creation
+                // Receive game seed for singleplayer world creation
                 long seed = msg.get("seed").getAsLong();
                 LOGGER.info("Received game seed: {}", seed);
                 // Only trigger world creation on round 1
@@ -257,7 +257,7 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_RECONNECT_STATE -> {
-                // Fix 7: Reconnection state restore
+                // Reconnection state restore
                 String rPhase = msg.get("phase").getAsString();
                 int rRound = msg.get("round").getAsInt();
                 int rTimer = msg.get("timerTicks").getAsInt();

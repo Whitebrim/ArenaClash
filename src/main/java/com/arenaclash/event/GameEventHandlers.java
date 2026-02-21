@@ -26,7 +26,6 @@ import net.minecraft.util.math.BlockPos;
 
 /**
  * All server-side event handlers.
- * KEY CHANGE: Bell is now a physical block interaction, not a keyboard key.
  */
 public class GameEventHandlers {
 
@@ -43,7 +42,7 @@ public class GameEventHandlers {
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
-                // Fix 1: Spawner mobs don't give cards
+                // Spawner mobs don't give cards
                 if (entity.getCommandTags().contains("arenaclash_spawner_mob")) {
                     return;
                 }

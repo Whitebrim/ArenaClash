@@ -55,7 +55,6 @@ public class WorldManager {
 
     /**
      * Create all player worlds with the given seed.
-     * NOTE: With hybrid architecture, this is only needed for legacy/testing.
      */
     public void createPlayerWorlds(long seed) {
         for (TeamSide team : TeamSide.values()) {

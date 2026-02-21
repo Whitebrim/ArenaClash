@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Fix 6: Intercept outgoing chat messages from the client
+ * Intercept outgoing chat messages from the client
  * and forward them via TCP to the opponent.
  */
 @Mixin(ClientPlayNetworkHandler.class)

@@ -124,7 +124,7 @@ public class GameHudRenderer {
         }
 
         // =============================================
-        // GAME OVER OVERLAY (FIX 4)
+        // GAME OVER OVERLAY 
         // =============================================
         if ("GAME_OVER".equals(phase)) {
             int screenHeight = client.getWindow().getScaledHeight();

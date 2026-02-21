@@ -23,7 +23,7 @@ public class TcpSession {
     private boolean ready = false;
     private boolean connectedToMc = false;
     private volatile boolean alive = true;
-    private String savedInventoryJson = null; // FIX 10: Saved survival inventory
+    private String savedInventoryJson = null; // Saved survival inventory
     private boolean paused = false; // Client pause state (ESC menu open)
 
     public TcpSession(String sessionId, String playerName, UUID playerUuid, OutputStream outputStream) {

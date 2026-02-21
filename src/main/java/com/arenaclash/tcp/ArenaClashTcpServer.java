@@ -95,7 +95,7 @@ public class ArenaClashTcpServer {
                 String playerName = authMsg.get("playerName").getAsString();
                 UUID playerUuid = UUID.fromString(authMsg.get("uuid").getAsString());
 
-                // Fix 7: Check for existing session (reconnection)
+                // Check for existing session (reconnection)
                 TcpSession existingSession = sessionsByUuid.get(playerUuid);
                 CardInventory reconnectCards = null;
                 TeamSide reconnectTeam = null;
@@ -140,7 +140,7 @@ public class ArenaClashTcpServer {
                 // Send welcome
                 session.send(SyncProtocol.welcome(sessionId, port, mcPort));
 
-                // Fix 7: Send reconnect state if game is active
+                // Send reconnect state if game is active
                 GameManager gm2 = GameManager.getInstance();
                 if (gm2.isGameActive() && reconnectTeam != null) {
                     String cardsSnbt = session.getCardInventory().toNbt().toString();
@@ -209,7 +209,7 @@ public class ArenaClashTcpServer {
                 String mobId = msg.get("mobId").getAsString();
                 if (MobCardRegistry.getById(mobId) != null) {
                     session.addCard(mobId);
-                    // Fix 8: Don't send ack message here - client already shows it locally
+                    // Don't send ack message here - client already shows it locally
                     // Sync updated card list
                     syncCards(session);
                 }
@@ -235,13 +235,13 @@ public class ArenaClashTcpServer {
                 gm.handleTcpBellRing(session);
             }
             case SyncProtocol.C2S_INVENTORY_SYNC -> {
-                // FIX 10: Store player's survival inventory for use on arena
+                // Store player's survival inventory for use on arena
                 String itemsJson = msg.get("items").getAsString();
                 session.setSavedInventoryJson(itemsJson);
                 gm.onInventorySync(session, itemsJson);
             }
             case SyncProtocol.C2S_CHAT -> {
-                // Fix 6: Relay chat to all other players
+                // Relay chat to all other players
                 String chatMessage = msg.get("message").getAsString();
                 for (TcpSession other : sessions.values()) {
                     if (!other.getSessionId().equals(session.getSessionId())) {
@@ -250,7 +250,7 @@ public class ArenaClashTcpServer {
                 }
             }
             case "WORLD_READY" -> {
-                // FIX 7: Player's singleplayer world is created and ready
+                // Player's singleplayer world is created and ready
                 net.minecraft.server.MinecraftServer server = gm.getServer();
                 if (server != null) {
                     server.execute(() -> gm.onPlayerWorldReady(session.getPlayerUuid()));

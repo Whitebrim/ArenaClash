@@ -6,17 +6,12 @@ import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ExperienceOrbEntity;
 import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.scoreboard.Scoreboard;
-import net.minecraft.scoreboard.Team;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -32,15 +27,12 @@ import java.util.Map;
  *
  * 1. Prevent XP orb spawning during survival phase.
  * 2. Tag spawner-spawned mobs (detected by proximity to a MobSpawnerBlockEntity)
- *    with red glowing outline + "arenaclash_spawner_mob" tag → no cards on kill.
+ *    with "arenaclash_spawner_mob" tag + red label → no cards on kill.
  * 3. Replace raw-ore ItemEntity drops with smelted ingots during survival phase
  *    so players don't need to waste time on furnaces.
  */
 @Mixin(ServerWorld.class)
 public class ServerWorldMixin {
-
-    @Unique
-    private static final String SPAWNER_TEAM_NAME = "ac_spawner";
 
     /** Spawner scan radius (blocks). Spawners spawn mobs within 4 blocks horizontally. */
     @Unique
@@ -102,8 +94,7 @@ public class ServerWorldMixin {
     }
 
     // ================================================================
-    // Spawner detection: check if there's a MobSpawnerBlockEntity nearby
-    // whose configured entity type matches the spawned mob.
+    // Spawner detection via proximity to spawner blocks
     // ================================================================
 
     @Unique
@@ -131,33 +122,6 @@ public class ServerWorldMixin {
         // Red ✘ + "Spawner" label above head
         mob.setCustomName(Text.literal("\u00a7c\u2718 Spawner"));
         mob.setCustomNameVisible(true);
-
-        // Permanent Glowing effect for colored outline visible through walls
-        mob.addStatusEffect(new StatusEffectInstance(
-                StatusEffects.GLOWING,
-                StatusEffectInstance.INFINITE,
-                0, false, false, false
-        ));
-
-        // Add to red scoreboard team so glow renders in red
-        arenaclash$ensureSpawnerTeam(mob);
-    }
-
-    @Unique
-    private void arenaclash$ensureSpawnerTeam(MobEntity mob) {
-        ServerWorld world = (ServerWorld) (Object) this;
-        Scoreboard scoreboard = world.getScoreboard();
-
-        Team team = scoreboard.getTeam(SPAWNER_TEAM_NAME);
-        if (team == null) {
-            team = scoreboard.addTeam(SPAWNER_TEAM_NAME);
-            team.setColor(Formatting.RED);
-        }
-
-        String entry = mob.getUuidAsString();
-        if (!team.getPlayerList().contains(entry)) {
-            scoreboard.addScoreHolderToTeam(entry, team);
-        }
     }
 
     // ================================================================

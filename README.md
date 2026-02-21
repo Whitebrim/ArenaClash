@@ -1,6 +1,6 @@
 # Arena Clash — Fabric Mod for Minecraft 1.21.1
 
-A Clash Royale-style 1v1 PvP arena mod where players gather resources in survival, then battle by deploying mobs onto 3-lane arena.
+A Clash Royale-style 1v1 PvP arena mod where players gather resources in survival, then battle by deploying mobs onto a 3-lane arena.
 
 ## Requirements
 
@@ -20,56 +20,85 @@ JAR output: `build/libs/arena-clash-0.1.0.jar`
 
 ## Setup
 
-1. Build the mod and place the JAR in the server's `mods/` folder
-2. Also install Fabric API on both server and clients
-3. Players need the mod installed client-side for GUI, HUD, and keybinds
+1. Build the mod and place the JAR in the server's `mods/` folder.
+2. Install Fabric API on both server and clients.
+3. Players need the mod installed client-side for GUI, HUD, and keybinds.
+4. TCP server starts automatically on port 25566 alongside MC server.
+
+## Architecture
+
+Arena Clash uses a **hybrid TCP + MC server** model:
+
+- **TCP connection** — persistent, used for lobby, card sync, phase notifications, chat relay. Stays active even when players are in singleplayer.
+- **MC server connection** — only during PREPARATION and BATTLE phases. Players connect to the dedicated server to view the arena.
+- **Singleplayer** — during SURVIVAL phase, each player plays in their own auto-generated singleplayer world (same seed for fairness).
+
+```
+Title Screen → "Arena Clash" button → ConnectScreen → TCP connect
+              ↓
+         LOBBY (TCP only, waiting for 2 players)
+              ↓  auto-start when 2 connected
+         SURVIVAL (singleplayer, TCP sync)
+              ↓  timer expires
+         PREPARATION (MC server connect, place cards on arena)
+              ↓  both ready or timer expires
+         BATTLE (MC server, watch mobs fight)
+              ↓  all mobs dead or throne destroyed
+         ROUND_END → SURVIVAL → ... (repeat for 3 rounds)
+              ↓  after final round or throne destroyed
+         GAME_OVER (15s results screen → return to singleplayer)
+```
 
 ## Commands (requires OP level 2)
 
-| Command | Description |
-|---|---|
-| `/ac start <player1> <player2>` | Start a new game |
-| `/ac reset` | Reset game, delete all worlds |
-| `/ac status` | Show current game state |
-| `/ac cards` | List your card inventory |
-| `/ac bell` | Ring the bell (ready/retreat) |
-| `/ac givecard <player> <mobId> [count]` | Debug: give cards |
-| `/ac config show` | Show current config |
-| `/ac config dayDuration <ticks>` | Set day duration |
-| `/ac config prepTime <ticks>` | Set preparation time |
-| `/ac config seed <seed>` | Set world seed |
+| Command                                 | Description                                               |
+|-----------------------------------------|-----------------------------------------------------------|
+| `/ac start`                             | Start a new game (auto-starts when 2 TCP players connect) |
+| `/ac start <player1> <player2>`         | Start with specific MC players (requires TCP sessions)    |
+| `/ac reset`                             | Reset game, delete all arena worlds                       |
+| `/ac status`                            | Show current game phase, round, timer                     |
+| `/ac cards`                             | List your card inventory                                  |
+| `/ac givecard <player> <mobId> [count]` | Debug: give cards to a player                             |
+| `/ac pause`                             | Pause the game timer                                      |
+| `/ac continue`                          | Resume the game timer                                     |
+| `/ac skip`                              | Skip current phase                                        |
+| `/ac config show`                       | Show current config                                       |
+| `/ac config dayDuration <ticks>`        | Set day duration (default: 6000)                          |
+| `/ac config prepTime <ticks>`           | Set preparation time                                      |
+| `/ac config seed <seed>`                | Set world seed                                            |
 
 ## Keybinds
 
-| Key | Action |
-|---|---|
-| `J` | Open card inventory / deployment screen |
-| `B` | Ring bell (ready during prep / retreat during battle) |
+| Key   | Action                                                                   |
+|-------|--------------------------------------------------------------------------|
+| `Tab` | Open card inventory (survival/battle) or deployment screen (preparation) |
 
 ## Game Flow
 
-### Round Structure (3 rounds)
-1. **Survival Phase** — Players are teleported to separate identical overworld copies. Kill mobs to earn cards. Ores drop smelted ingots. XP is disabled. Accelerated day cycle (5 min = 1 day).
-   - Round 1: 1 day, Round 2: 2 days, Round 3: 3 days
-2. **Preparation Phase** — Players teleported to arena. Place mob cards on deployment slots (2×2 per lane, 3 lanes). Press `J` to open deployment GUI. Ring bell (`B`) when ready, or wait for timer (3 min).
-3. **Battle Phase** — Mobs spawn and advance along lanes toward enemy throne. Custom pathfinding (A* waypoints) and combat system. Towers shoot arrows at nearby enemies. Throne deals AoE damage.
-4. **Round End** — Dead mobs generate XP. Retreated mobs return to cards. Damage stats accumulated.
+### Round Structure (default: 3 rounds)
+
+1. **Survival Phase** — Players play in separate singleplayer worlds with identical seeds. Kill mobs to earn cards. Ores auto-smelt (raw iron → iron ingot, etc.). XP orbs are disabled. Day/night cycle is accelerated. Spawner mobs are tagged red and don't give cards. Duration scales with round (R1: 1 day, R2: 2 days, R3: 3 days).
+
+2. **Preparation Phase** — Players connect to the MC server and see the arena. Open deployment GUI (`R`) to place mob cards on 3 lanes × 2 slots per lane. Ring the physical bell on the arena or wait for timer (3 min) to start battle. Players can build in designated zones behind their throne.
+
+3. **Battle Phase** — Deployed mobs spawn and advance along lanes toward the enemy throne. Waypoint-based navigation with lane confinement. Towers shoot arrows at nearby enemies. Throne deals AoE damage. No time limit — ends when all mobs are dead or a throne is destroyed.
+
+4. **Round End** — Retreated mobs return to cards. Damage stats are accumulated. 10-second pause before next survival phase.
 
 ### Victory Conditions (priority order)
+
 1. Throne destroyed → instant win
-2. After 3 rounds: most throne damage dealt
-3. Tie: most enemy towers destroyed
-4. Tie: most tower damage dealt
+2. After 3 rounds: most cumulative throne damage
+3. Tiebreak: most enemy towers destroyed
+4. Tiebreak: most tower damage dealt
 5. Full tie → draw
 
-## Mob Card System
+## Mob Cards
 
-- Kill any registered mob in survival → get a level 1 card
-- Card appears with totem-like animation (MVP: chat message)
-- Cards stored in separate GUI (not vanilla inventory)
-- During preparation, place cards on lane slots
+Kill a registered mob during survival → get a level 1 card. Cards are stored in a separate inventory (not vanilla slots) and synced via TCP.
 
 ### Registered Mobs (~40 types)
+
 **Undead:** Zombie, Skeleton, Husk, Stray, Drowned, Phantom, Wither Skeleton, Zombified Piglin
 **Arthropod:** Spider, Cave Spider, Silverfish, Endermite
 **Nether:** Blaze, Ghast, Piglin, Piglin Brute, Hoglin, Magma Cube
@@ -77,7 +106,7 @@ JAR output: `build/libs/arena-clash-0.1.0.jar`
 **Illager:** Vindicator, Pillager, Evoker, Ravager, Vex
 **Golem:** Iron Golem, Snow Golem
 **Animal:** Wolf, Bee, Llama, Goat, Chicken, Cow, Pig, Sheep
-**Special:** Creeper, Witch, Slime
+**Special:** Creeper, Witch, Slime, Baby Zombie
 **Boss:** Warden, Wither, Elder Guardian
 
 ## Arena Layout
@@ -87,7 +116,7 @@ JAR output: `build/libs/arena-clash-0.1.0.jar`
          /    |    \
     [Tower] [   ] [Tower]
        |      |      |
-    Lane L  Lane C  Lane R
+    Lane R Lane C  Lane L
        |      |      |
     =======DIVIDER=======    ← center Z
        |      |      |
@@ -98,88 +127,90 @@ JAR output: `build/libs/arena-clash-0.1.0.jar`
           [Throne P1]          Z-
 ```
 
-- Lane length: ~36 blocks
-- Lane width: 5 blocks
-- Lane separation: 15 blocks between centers
-- Towers cover their lane + center lane
-- Throne has AoE melee damage
+Lane length ~36 blocks, width 5 blocks, separation 15 blocks between centers. Towers cover their lane + adjacent. Throne has AoE melee.
 
 ## Configuration
 
 All values tunable via `/ac config` or `config/arenaclash.json`:
 
-- Day duration, preparation time, round counts
-- Arena dimensions, lane length/width/separation
+- Day duration, preparation time, max rounds
+- Arena dimensions, lane geometry
 - Throne/tower HP, damage, range, cooldowns
 - Knockback strength, mob aggro range
-- Game seed
+- Game seed (0 = random)
 
-## Architecture
+## Mixins
+
+| Mixin                       | Target                                  | Purpose                                                                 |
+|-----------------------------|-----------------------------------------|-------------------------------------------------------------------------|
+| `ServerWorldMixin`          | `ServerWorld.spawnEntity`               | XP orb prevention, spawner mob detection (proximity), ore auto-smelting |
+| `ExperienceOrbMixin`        | `ExperienceOrbEntity.onPlayerCollision` | Prevent XP collection during survival                                   |
+| `DayCycleMixin`             | `ServerWorld.tick`                      | Accelerate day/night cycle                                              |
+| `PlayerManagerMixin`        | `PlayerManager.broadcast`               | Forward chat/death messages via TCP                                     |
+| `EntityRideMixin`           | `Entity.startRiding`                    | Prevent arena/spawner mobs from mounting vehicles                       |
+| `TitleScreenMixin` (client) | Title screen                            | Add "Arena Clash" button                                                |
+| `ClientChatMixin` (client)  | Client chat                             | Intercept outgoing chat for TCP relay                                   |
+
+## Project Structure
 
 ```
 com.arenaclash/
-├── ArenaClash.java          # Main entry point
-├── ai/
-│   ├── CombatSystem.java    # Custom melee/structure combat
-│   └── LanePathfinder.java  # A* waypoint pathfinding
+├── ArenaClash.java              # Server entry point, TCP server init
 ├── arena/
-│   ├── ArenaBuilder.java    # Block structure generation
-│   ├── ArenaManager.java    # Battle management
-│   ├── ArenaMob.java        # Mob controller/wrapper
-│   ├── ArenaStructure.java  # Tower/throne with HP
-│   └── Lane.java            # Lane + deployment slots
+│   ├── ArenaBuilder.java        # Block-level arena construction
+│   ├── ArenaManager.java        # Battle orchestration, lanes, structures
+│   ├── ArenaMob.java            # Mob controller (state machine, combat, navigation)
+│   ├── ArenaStructure.java      # Tower/throne with HP, attacks, visual effects
+│   └── Lane.java                # Lane geometry + deployment slots
 ├── card/
-│   ├── CardInventory.java   # Per-player card storage
-│   ├── MobCard.java         # Card instance
-│   ├── MobCardDefinition.java # Card template/stats
-│   └── MobCardRegistry.java # All mob definitions
+│   ├── CardInventory.java       # Per-player card collection
+│   ├── MobCard.java             # Card instance (definition + UUID)
+│   ├── MobCardDefinition.java   # Card template (stats, category, entity type)
+│   └── MobCardRegistry.java     # All mob definitions (~40 types)
 ├── command/
-│   └── GameCommands.java    # /ac commands
+│   └── GameCommands.java        # /ac commands
 ├── config/
-│   └── GameConfig.java      # Tunable config
+│   └── GameConfig.java          # Tunable config with JSON persistence
 ├── event/
-│   └── GameEventHandlers.java # Server events
+│   └── GameEventHandlers.java   # Server events (mob kills, bell, build zones)
 ├── game/
-│   ├── GameManager.java     # Central state machine
-│   ├── GamePhase.java       # Phase enum
-│   ├── PlayerGameData.java  # Per-player data
-│   └── TeamSide.java        # Team enum
-├── mixin/
-│   ├── ExperienceOrbMixin.java  # Prevent XP collection
-│   └── ServerWorldMixin.java    # Prevent XP spawning
+│   ├── GameManager.java         # Central state machine
+│   ├── GamePhase.java           # LOBBY, SURVIVAL, PREPARATION, BATTLE, etc.
+│   ├── PlayerGameData.java      # Per-player wrapper for events
+│   └── TeamSide.java            # PLAYER1 / PLAYER2
+├── mixin/                       # See Mixins table above
 ├── network/
-│   └── NetworkHandler.java  # All packets
+│   └── NetworkHandler.java      # Fabric networking packets (MC server ↔ client)
+├── tcp/
+│   ├── ArenaClashTcpServer.java # Persistent TCP server (lobby, sync, relay)
+│   ├── SingleplayerBridge.java  # Queue bridge: integrated server → client thread
+│   ├── SyncProtocol.java        # JSON message protocol definitions
+│   └── TcpSession.java          # Per-player TCP session state
 └── world/
-    └── WorldManager.java    # Fantasy runtime worlds
+    └── WorldManager.java        # Fantasy runtime world management
 
 client/
-├── ArenaClashClient.java    # Client entry point
+├── ArenaClashClient.java        # Client entry point, tick loop, world transitions
 ├── gui/
-│   ├── CardScreen.java      # Card inventory viewer
-│   └── DeploymentScreen.java # Mob placement GUI
-└── render/
-    └── GameHudRenderer.java # HUD overlay
+│   ├── CardScreen.java          # Card inventory viewer
+│   ├── ConnectScreen.java       # TCP server connection UI
+│   └── DeploymentScreen.java    # Mob placement GUI
+├── mixin/
+│   ├── ClientChatMixin.java     # Chat interception
+│   └── TitleScreenMixin.java    # Title screen button
+├── render/
+│   └── GameHudRenderer.java     # HUD overlay (timer, phase, round pips)
+├── tcp/
+│   └── ArenaClashTcpClient.java # Client-side TCP connection
+└── world/
+    └── WorldCreationHelper.java # Singleplayer world creation from seed
 ```
 
-## MVP Scope
+## Key Technical Details
 
-**Included:**
-- Arena + SinglePlayer worlds
-- Full game cycle: Survival → Prep → Battle × 3 rounds
-- Card drops from mob kills, card inventory
-- Custom A* pathfinding + custom combat
-- Towers and thrones as block structures with HP + degradation
-- All victory conditions
-- Config system
-- Client GUI + HUD
-
-**Deferred (post-MVP):**
-- Card merging/upgrading (requires workshop tables)
-- Weapon/armor card equipment (requires workshop)
-- Workshop table system
-- Skill tree / XP spending
-- Spells/abilities
-- Player-built tower defense
-- Bell retreat mechanic
-- 3D card rendering
-- Team vs team / FFA modes
+- **Inventory sync**: Player inventories are serialized as SNBT and transferred via TCP between singleplayer and arena server.
+- **Reconnection**: TCP sessions preserve cards and team assignment on disconnect/reconnect. Game state is restored automatically.
+- **Auto-pause**: If both players press ESC simultaneously, the game timer pauses.
+- **Lane mirroring**: PLAYER1's "LEFT" maps to world RIGHT so both players see consistent UI perspectives.
+- **Spawner detection**: Mobs spawning within 5 blocks of a spawner block are tagged with red glow and excluded from card drops.
+- **Ore auto-smelting**: Raw ores dropped as `ItemEntity` are replaced with their smelted equivalents. Works with Fortune (preserves stack count) and doesn't affect Silk Touch (drops ore block, not raw item).

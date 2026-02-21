@@ -473,7 +473,7 @@ public class ArenaManager {
                     experienceEarned.merge(killer, 1, Integer::sum);
                 });
 
-        // FIX 9: Tick floating damage numbers
+        // Tick floating damage numbers
         ArenaMob.tickDamageNumbers(arenaWorld);
     }
 
@@ -530,7 +530,7 @@ public class ArenaManager {
             for (ArenaMob mob : activeMobs) {
                 mob.removeEntity(arenaWorld);
             }
-            // FIX 9: Clean up floating damage numbers
+            // Clean up floating damage numbers
             List<Entity> toRemove = new ArrayList<>();
             for (Entity e : arenaWorld.iterateEntities()) {
                 if (e.getCommandTags().contains("arenaclash_dmg_number")

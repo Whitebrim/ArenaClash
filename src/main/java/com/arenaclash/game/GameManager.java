@@ -64,12 +64,12 @@ public class GameManager {
 
     private boolean gameActive = false;
     private long currentGameSeed = 0;
-    private int battleEndGraceTicks = -1; // Fix 5: grace period after all mobs dead before ending round
+    private int battleEndGraceTicks = -1; // grace period after all mobs dead before ending round
 
-    // FIX 5: Pause state
+    // Pause state
     private boolean gamePaused = false;
 
-    // FIX 7: World creation readiness tracking
+    // World creation readiness tracking
     private final Set<UUID> worldReadyPlayers = new HashSet<>();
     private boolean waitingForWorlds = false;
 
@@ -153,8 +153,7 @@ public class GameManager {
         currentRound = 1;
 
         // Generate game seed
-        GameConfig cfgSeed = GameConfig.get();
-        long seed = cfgSeed.gameSeed != 0 ? cfgSeed.gameSeed : new java.util.Random().nextLong();
+        long seed = cfg.gameSeed != 0 ? cfg.gameSeed : new java.util.Random().nextLong();
         this.currentGameSeed = seed;
 
         // Send game seed to all clients for singleplayer world creation
@@ -171,10 +170,9 @@ public class GameManager {
     }
 
     /**
-     * Legacy start with MC players (for backward compat / testing).
+     * Start game with MC players. Requires active TCP sessions for both.
      */
     public String startGame(ServerPlayerEntity player1, ServerPlayerEntity player2) {
-        // If TCP sessions exist for these players, use the new flow
         if (tcpServer != null) {
             TcpSession s1 = tcpServer.getSession(player1.getUuid());
             TcpSession s2 = tcpServer.getSession(player2.getUuid());
@@ -195,7 +193,7 @@ public class GameManager {
         phaseTicksRemaining = cfg.getSurvivalDurationTicks(currentRound);
         readyPlayers.clear();
 
-        // FIX 7: Wait for both players to create their worlds before starting timer
+        // Wait for both players to create their worlds before starting timer
         worldReadyPlayers.clear();
         waitingForWorlds = true;
 
@@ -205,7 +203,7 @@ public class GameManager {
         // Tell clients: stay in singleplayer, survival phase started
         tcpServer.broadcast(SyncProtocol.phaseChange("SURVIVAL", currentRound, phaseTicksRemaining));
 
-        // Send seed so clients can create/reload their world (Fix 3)
+        // Send seed so clients can create/reload their world 
         tcpServer.broadcast(SyncProtocol.gameSeed(currentGameSeed));
 
         // If players are on MC server, tell them to disconnect
@@ -248,7 +246,7 @@ public class GameManager {
 
         syncAllCards();
 
-        // Fix 5: Sync empty deployment slots to all clients at start of preparation
+        // Sync empty deployment slots to all clients at start of preparation
         for (UUID uuid : playerOrder) {
             TcpSession session = tcpServer.getSession(uuid);
             if (session != null) {
@@ -259,7 +257,7 @@ public class GameManager {
 
     private void startBattlePhase() {
         phase = GamePhase.BATTLE;
-        phaseTicksRemaining = -1; // Fix 5: No battle timeout (unlimited)
+        phaseTicksRemaining = -1; // No battle timeout (unlimited)
         battleEndGraceTicks = -1; // Reset grace period
 
         arenaManager.startBattle();
@@ -313,7 +311,7 @@ public class GameManager {
             if (session != null) {
                 TeamSide team = session.getTeam();
                 int xp = xpEarned.getOrDefault(team, 0);
-                // Level up cards with XP (simplified)
+                // TODO: use XP to level up cards
             }
         }
 
@@ -374,11 +372,11 @@ public class GameManager {
         // Build detailed result info
         String details = buildGameResultDetails(winner);
 
-        // FIX 4: Send game result with winner/loser details for proper end screen
+        // Send game result with winner/loser details for proper end screen
         tcpServer.broadcast(SyncProtocol.gameResult(winnerName, details));
         tcpServer.broadcast(SyncProtocol.serverMessage("§6§l=== GAME OVER === Winner: " + winnerName));
 
-        // FIX 4: Send title screen messages and spawn fireworks for winner
+        // Send title screen messages and spawn fireworks for winner
         if (server != null) {
             for (UUID uuid : playerOrder) {
                 ServerPlayerEntity player = getPlayer(uuid);
@@ -502,7 +500,7 @@ public class GameManager {
         if (!gameActive) return;
         if (gamePaused) return;
 
-        // FIX 7: If waiting for world creation, don't tick survival timer
+        // If waiting for world creation, don't tick survival timer
         if (waitingForWorlds && phase == GamePhase.SURVIVAL) {
             return;
         }
@@ -517,7 +515,7 @@ public class GameManager {
         }
     }
 
-    // === FIX 5: Pause/Continue/Skip commands ===
+    // === Pause/Continue/Skip commands ===
 
     public String pauseGame() {
         if (!gameActive) return "No game in progress!";
@@ -588,7 +586,7 @@ public class GameManager {
         }
     }
 
-    // === FIX 7: World creation readiness ===
+    // === World creation readiness ===
 
     /**
      * Called when a player reports their singleplayer world is created and ready.
@@ -604,7 +602,7 @@ public class GameManager {
         }
     }
 
-    // === FIX 10: Inventory sync ===
+    // === Inventory sync ===
 
     /**
      * Called when a player sends their singleplayer inventory data.
@@ -689,7 +687,7 @@ public class GameManager {
     }
 
     private void tickBattle() {
-        // Fix 5: No countdown timeout for battle
+        // No countdown timeout for battle
         arenaManager.tickBattle();
 
         // Check for instant-win (throne destroyed)
@@ -737,7 +735,7 @@ public class GameManager {
     }
 
     /**
-     * FIX 4: Game over countdown - show results for 15 seconds then clean up.
+     * Game over countdown - show results for 15 seconds then clean up.
      */
     private void tickGameOver() {
         phaseTicksRemaining--;
@@ -793,7 +791,7 @@ public class GameManager {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
             TeamSide team = session.getTeam();
 
-            // FIX 3: Mirror lane for PLAYER1 so "LEFT" from their perspective maps to RIGHT in world
+            // Mirror lane for PLAYER1 so "LEFT" from their perspective maps to RIGHT in world
             if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
             }
@@ -825,7 +823,7 @@ public class GameManager {
             Lane.LaneId laneId = Lane.LaneId.valueOf(laneIdStr);
             TeamSide team = session.getTeam();
 
-            // FIX 3: Mirror lane for PLAYER1
+            // Mirror lane for PLAYER1
             if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
             }
@@ -844,7 +842,7 @@ public class GameManager {
     }
 
     /**
-     * FIX 3: Mirror lane IDs for PLAYER2 so their perspective matches their UI.
+     * Mirror lane IDs for PLAYER2 so their perspective matches their UI.
      * PLAYER2 faces opposite direction, so their LEFT is world RIGHT.
      */
     private Lane.LaneId mirrorLane(Lane.LaneId laneId) {
@@ -930,7 +928,7 @@ public class GameManager {
                 }
                 laneNbt.put("slot_" + i, slotNbt);
             }
-            // FIX 3: Mirror lane names for PLAYER1 so their UI shows correctly
+            // Mirror lane names for PLAYER1 so their UI shows correctly
             Lane.LaneId displayLaneId = (team == TeamSide.PLAYER1) ? mirrorLane(laneId) : laneId;
             slotsData.put(displayLaneId.name(), laneNbt);
         }
@@ -949,7 +947,7 @@ public class GameManager {
     /**
      * Called when an MC player joins the server during prep/battle.
      * Teleport them to the right spot on the arena.
-     * Fix 4: Added safety checks to prevent disconnect packet errors.
+     * Added safety checks to prevent disconnect packet errors.
      */
     public void onPlayerJoinMc(ServerPlayerEntity player) {
         if (!gameActive) return;
@@ -964,7 +962,7 @@ public class GameManager {
                 try {
                     if (player.isDisconnected()) return;
 
-                    // FIX 10: Restore player inventory from singleplayer survival
+                    // Restore player inventory from singleplayer survival
                     TcpSession session = tcpServer.getSession(player.getUuid());
                     if (session != null) {
                         String savedInv = session.getSavedInventoryJson();
@@ -1071,8 +1069,7 @@ public class GameManager {
     }
 
     /**
-     * Get PlayerGameData wrapper for backward compatibility with events.
-     * Creates a temporary wrapper backed by the TCP session's card inventory.
+     * Get PlayerGameData wrapper backed by the TCP session's card inventory.
      */
     public PlayerGameData getPlayerData(UUID playerId) {
         TeamSide team = playerTeams.get(playerId);

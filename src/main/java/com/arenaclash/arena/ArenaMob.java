@@ -330,7 +330,7 @@ public class ArenaMob {
         if (dmg >= 8) world.spawnParticles(ParticleTypes.CRIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 5, 0.4, 0.3, 0.4, 0.2);
         if (dmg >= 15) world.spawnParticles(ParticleTypes.ENCHANTED_HIT, dEnt.getX(), dEnt.getBodyY(0.5), dEnt.getZ(), 8, 0.5, 0.4, 0.5, 0.3);
 
-        // FIX 9: Spawn floating damage number
+        // Spawn floating damage number
         spawnDamageNumber(world, dEnt.getPos().add(0, dEnt.getHeight() + 0.5, 0), dmg);
 
         playAttackSound(world, attacker.getPos());
@@ -348,7 +348,7 @@ public class ArenaMob {
         world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
         world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
 
-        // FIX 9: Spawn floating damage number on structure
+        // Spawn floating damage number on structure
         spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
     }
 
@@ -421,7 +421,7 @@ public class ArenaMob {
         if (laneBoundsSet) {
             double effectiveMinX = laneMinX + 0.3;
             double effectiveMaxX = laneMaxX + 0.7;
-            // FIX 2: Expand X bounds toward target (structure, waypoint, or move target)
+            // Expand X bounds toward target (structure, waypoint, or move target)
             if (targetStructure != null) {
                 double structX = targetStructure.getPosition().getX() + 0.5;
                 effectiveMinX = Math.min(effectiveMinX, structX - 3.0);
@@ -451,7 +451,7 @@ public class ArenaMob {
 
     private void enforceLaneBounds(Entity entity) {
         if (!laneBoundsSet) return;
-        // FIX 2: When fighting or advancing toward a structure (especially throne),
+        // When fighting or advancing toward a structure (especially throne),
         // fully expand X bounds to allow reaching the structure
         boolean approachingStructure = (targetStructure != null &&
                 (state == MobState.FIGHTING || state == MobState.ADVANCING));
@@ -498,7 +498,7 @@ public class ArenaMob {
         for (ArenaStructure s : structures) {
             if (s.getOwner() == team || s.isDestroyed()) continue;
 
-            // FIX 1: Mobs on a lane should only target structures on their own lane
+            // Mobs on a lane should only target structures on their own lane
             // Towers have an associated lane; center lane mobs should NEVER target side towers
             if (s.getType() == ArenaStructure.StructureType.TOWER) {
                 Lane.LaneId towerLane = s.getAssociatedLane();
@@ -542,7 +542,7 @@ public class ArenaMob {
     }
 
     /**
-     * FIX 9: Spawn a floating damage number as an armor stand that despawns after ~1s.
+     * Spawn a floating damage number as an armor stand that despawns after ~1s.
      * The number floats upward and disappears.
      */
     public static void spawnDamageNumber(ServerWorld world, Vec3d pos, double damage) {

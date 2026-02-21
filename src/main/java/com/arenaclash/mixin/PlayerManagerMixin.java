@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Fix 6: Intercept chat messages and broadcast-type messages in singleplayer
+ * Intercept chat messages and broadcast-type messages in singleplayer
  * to forward them to the opponent via TCP.
  */
 @Mixin(PlayerManager.class)
