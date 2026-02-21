@@ -9,8 +9,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Intercept outgoing chat messages from the client
- * and forward them via TCP to the opponent.
+ * Intercept outgoing chat messages and commands from the client
+ * and forward them via TCP to the opponent / dedicated server.
  */
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientChatMixin {
@@ -20,6 +20,21 @@ public class ClientChatMixin {
         ArenaClashTcpClient tcp = ArenaClashClient.getTcpClient();
         if (tcp != null && tcp.isConnected()) {
             tcp.sendChat(message);
+        }
+    }
+
+    /**
+     * Intercept /ac commands: forward them via TCP to the dedicated server
+     * and cancel the local singleplayer server execution.
+     */
+    @Inject(method = "sendCommand", at = @At("HEAD"), cancellable = true)
+    private void arenaclash$interceptCommand(String command, CallbackInfo ci) {
+        if (command.startsWith("ac ") || command.equals("ac")) {
+            ArenaClashTcpClient tcp = ArenaClashClient.getTcpClient();
+            if (tcp != null && tcp.isConnected()) {
+                tcp.sendChat("/" + command);
+                ci.cancel();
+            }
         }
     }
 }

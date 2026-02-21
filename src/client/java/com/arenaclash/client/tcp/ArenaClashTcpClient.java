@@ -193,9 +193,14 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_RETURN_TO_SINGLE -> {
-                // Server says: go back to singleplayer
-                LOGGER.info("Server says return to singleplayer");
-                ArenaClashClient.scheduleReturnToSingleplayer();
+                // Server says: go back to singleplayer (or title screen after game over)
+                LOGGER.info("Server says return to singleplayer (phase: {})", currentPhase);
+                if ("GAME_OVER".equals(currentPhase)) {
+                    // After game over, go to title screen and delete the singleplayer world
+                    ArenaClashClient.scheduleReturnToTitleScreen();
+                } else {
+                    ArenaClashClient.scheduleReturnToSingleplayer();
+                }
             }
 
             case SyncProtocol.S2C_CARD_SYNC -> {

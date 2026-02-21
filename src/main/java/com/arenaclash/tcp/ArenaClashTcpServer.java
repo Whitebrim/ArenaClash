@@ -99,11 +99,13 @@ public class ArenaClashTcpServer {
                 TcpSession existingSession = sessionsByUuid.get(playerUuid);
                 CardInventory reconnectCards = null;
                 TeamSide reconnectTeam = null;
+                String reconnectInventoryJson = null;
                 if (existingSession != null) {
                     ArenaClash.LOGGER.info("[ArenaClash TCP] Player {} reconnecting (replacing old session {})",
                             playerName, existingSession.getSessionId());
                     reconnectCards = existingSession.getCardInventory();
                     reconnectTeam = existingSession.getTeam();
+                    reconnectInventoryJson = existingSession.getSavedInventoryJson();
                     sessions.remove(existingSession.getSessionId());
                     existingSession.disconnect();
                 }
@@ -130,6 +132,9 @@ public class ArenaClashTcpServer {
                 }
                 if (reconnectTeam != null) {
                     session.setTeam(reconnectTeam);
+                }
+                if (reconnectInventoryJson != null) {
+                    session.setSavedInventoryJson(reconnectInventoryJson);
                 }
 
                 sessions.put(sessionId, session);
@@ -243,6 +248,29 @@ public class ArenaClashTcpServer {
             case SyncProtocol.C2S_CHAT -> {
                 // Relay chat to all other players
                 String chatMessage = msg.get("message").getAsString();
+
+                // Handle /ac commands - execute on MC server
+                if (chatMessage.startsWith("/ac ") || chatMessage.equals("/ac")) {
+                    net.minecraft.server.MinecraftServer server = gm.getServer();
+                    if (server != null) {
+                        final String cmd = chatMessage.substring(1); // Remove leading "/"
+                        server.execute(() -> {
+                            try {
+                                net.minecraft.server.command.ServerCommandSource source =
+                                        server.getCommandSource().withSilent();
+                                server.getCommandManager().executeWithPrefix(source, "/" + cmd);
+                                // Send command output back to the player
+                                // (The command itself should send messages via TCP broadcast)
+                            } catch (Exception e) {
+                                session.send(SyncProtocol.serverMessage("§cCommand error: " + e.getMessage()));
+                            }
+                        });
+                    } else {
+                        session.send(SyncProtocol.serverMessage("§cServer not available for commands"));
+                    }
+                    return;
+                }
+
                 for (TcpSession other : sessions.values()) {
                     if (!other.getSessionId().equals(session.getSessionId())) {
                         other.send(SyncProtocol.chatRelay(session.getPlayerName(), chatMessage));

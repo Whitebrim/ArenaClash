@@ -298,6 +298,22 @@ public class WorldCreationHelper {
         }
     }
 
+    /** Delete a specific world by directory name. */
+    public static void deleteWorld(String worldDirName) {
+        if (worldDirName == null || worldDirName.isEmpty()) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        Path worldDir = savesDir.resolve(worldDirName);
+        if (Files.exists(worldDir) && Files.isDirectory(worldDir)) {
+            try {
+                deleteDirectory(worldDir);
+                LOGGER.info("Deleted world: {}", worldDirName);
+            } catch (IOException e) {
+                LOGGER.warn("Could not delete world: {}", worldDirName, e);
+            }
+        }
+    }
+
     /** Delete every ArenaClash_* save from disk. */
     public static void cleanupOldWorlds() {
         MinecraftClient client = MinecraftClient.getInstance();

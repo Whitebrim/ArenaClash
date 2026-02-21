@@ -47,6 +47,12 @@ public class ArenaClashClient implements ClientModInitializer {
     private static volatile String scheduledMcHost = null;
     private static volatile int scheduledMcPort = 0;
     private static volatile boolean scheduledReturnToSingle = false;
+    private static volatile boolean scheduledReturnToTitle = false;
+    private static volatile boolean scheduledReturnToGame = false;
+
+    // Last known MC server address for Continue button
+    private static String lastMcHost = null;
+    private static int lastMcPort = 0;
 
     // Key bindings
     private static KeyBinding openCardsKey;
@@ -119,6 +125,25 @@ public class ArenaClashClient implements ClientModInitializer {
         if (scheduledReturnToSingle) {
             scheduledReturnToSingle = false;
             returnToSingleplayer(client);
+        }
+
+        // Handle scheduled return to title screen (after game over)
+        if (scheduledReturnToTitle) {
+            scheduledReturnToTitle = false;
+            returnToTitleScreen(client);
+        }
+
+        // Handle scheduled return to game (Continue button)
+        if (scheduledReturnToGame) {
+            scheduledReturnToGame = false;
+            if (lastMcHost != null && lastMcPort > 0) {
+                connectToMcServer(client, lastMcHost, lastMcPort);
+            } else if (tcpClient != null && tcpClient.getServerMcPort() > 0) {
+                // Fallback: derive host from TCP connection
+                String host = tcpClient.getServerHost();
+                int port = tcpClient.getServerMcPort();
+                if (host != null) connectToMcServer(client, host, port);
+            }
         }
 
         // Handle world creation ticks 
@@ -254,10 +279,21 @@ public class ArenaClashClient implements ClientModInitializer {
     public static void scheduleConnectToMcServer(String host, int port) {
         scheduledMcHost = host;
         scheduledMcPort = port;
+        lastMcHost = host;
+        lastMcPort = port;
     }
 
     public static void scheduleReturnToSingleplayer() {
         scheduledReturnToSingle = true;
+    }
+
+    public static void scheduleReturnToTitleScreen() {
+        scheduledReturnToTitle = true;
+    }
+
+    /** Reconnect to the MC arena server from title screen (Continue button) */
+    public static void scheduleReturnToGame() {
+        scheduledReturnToGame = true;
     }
 
     public static void scheduleWorldCreation(long seed, int round) {
@@ -311,6 +347,33 @@ public class ArenaClashClient implements ClientModInitializer {
         } else {
             client.setScreen(new TitleScreen());
         }
+    }
+
+    private void returnToTitleScreen(MinecraftClient client) {
+        LOGGER.info("Returning to title screen after game over");
+
+        if (client.world != null) {
+            client.world.disconnect();
+        }
+        client.disconnect();
+
+        // Delete the ArenaClash singleplayer world
+        String worldToDelete = savedSingleplayerWorld;
+        savedSingleplayerWorld = null;
+        currentPhase = "LOBBY";
+        timerTicks = 0;
+        currentRound = 0;
+
+        new Thread(() -> {
+            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            client.execute(() -> {
+                client.setScreen(new TitleScreen());
+                // Delete the arena clash world in background
+                if (worldToDelete != null) {
+                    WorldCreationHelper.deleteWorld(worldToDelete);
+                }
+            });
+        }, "ArenaClash-ReturnTitle").start();
     }
 
     // =========================================================================

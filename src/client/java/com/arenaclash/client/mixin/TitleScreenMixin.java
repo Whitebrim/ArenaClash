@@ -21,10 +21,22 @@ public abstract class TitleScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void arenaclash$addButton(CallbackInfo ci) {
-        // Place button below the existing buttons on the right side
+        // Arena Clash button — always visible
         this.addDrawableChild(ButtonWidget.builder(
                 Text.literal("§6⚔ Arena Clash"),
                 button -> this.client.setScreen(new ConnectScreen(this))
         ).dimensions(this.width / 2 + 104, this.height / 4 + 48, 100, 20).build());
+
+        // Continue button — only visible when TCP is connected and game is in progress
+        var tcp = com.arenaclash.client.ArenaClashClient.getTcpClient();
+        if (tcp != null && tcp.isConnected() && !"LOBBY".equals(tcp.currentPhase)) {
+            this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("§a⚔ Continue"),
+                    button -> {
+                        // Trigger reconnect to the game without disconnect/connect
+                        com.arenaclash.client.ArenaClashClient.scheduleReturnToGame();
+                    }
+            ).dimensions(this.width / 2 + 104, this.height / 4 + 72, 100, 20).build());
+        }
     }
 }

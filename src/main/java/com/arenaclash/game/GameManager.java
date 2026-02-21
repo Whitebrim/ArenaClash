@@ -346,8 +346,7 @@ public class GameManager {
             endGame(winner);
         } else {
             currentRound++;
-            phaseTicksRemaining = 200; // 10 sec pause
-            tcpServer.broadcast(SyncProtocol.serverMessage("§eNext round starts in 10 seconds..."));
+            phaseTicksRemaining = 1; // Immediately proceed to next survival phase
         }
     }
 

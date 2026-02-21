@@ -50,8 +50,8 @@ public class ServerWorldMixin {
             arenaclash$oreItemReplacements.put(Items.RAW_IRON, new ItemStack(Items.IRON_INGOT));
             arenaclash$oreItemReplacements.put(Items.RAW_GOLD, new ItemStack(Items.GOLD_INGOT));
             arenaclash$oreItemReplacements.put(Items.RAW_COPPER, new ItemStack(Items.COPPER_INGOT));
-            // Ancient debris drops itself; smelting gives netherite scrap
-            arenaclash$oreItemReplacements.put(Items.ANCIENT_DEBRIS, new ItemStack(Items.NETHERITE_SCRAP));
+            // Note: Ancient Debris is NOT auto-smelted because it drops itself (the block)
+            // unlike other ores which drop raw materials. This also respects Silk Touch.
             // Nether gold ore drops gold nuggets; replace with ingot for convenience
             // (9 nuggets = 1 ingot, but just giving 1 nugget → 1 ingot is too generous;
             //  keep the nuggets as-is since they're already smelted)

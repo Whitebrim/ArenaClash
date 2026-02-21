@@ -89,6 +89,16 @@ public class GameEventHandlers {
                     var def = MobCardRegistry.getByEntityType(entity.getType());
                     if (def == null) return;
                     cardId = def.id();
+
+                    // Slime/Magma Cube: give card based on killed size
+                    if (entity instanceof net.minecraft.entity.mob.SlimeEntity slime) {
+                        int size = slime.getSize();
+                        String baseId = entity.getType() == net.minecraft.entity.EntityType.MAGMA_CUBE ? "magma_cube" : "slime";
+                        if (size >= 4) cardId = baseId + "_large";
+                        else if (size >= 2) cardId = baseId + "_medium";
+                        else cardId = baseId;
+                        if (MobCardRegistry.getById(cardId) == null) cardId = baseId;
+                    }
                 }
 
                 final String finalCardId = cardId;

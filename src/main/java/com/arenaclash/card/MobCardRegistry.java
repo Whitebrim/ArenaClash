@@ -72,11 +72,27 @@ public class MobCardRegistry {
                 26.0, 2.5, 2.0, 40,
                 false, false, List.of("potion"), MobCategory.NEUTRAL));
         register(new MobCardDefinition(
-                EntityType.SLIME, "slime", "Slime",
+                EntityType.SLIME, "slime", "Slime (Small)",
+                4.0, 2.0, 2.0, 20,
+                false, false, List.of(), MobCategory.NEUTRAL));
+        registerById(new MobCardDefinition(
+                EntityType.SLIME, "slime_medium", "Slime (Medium)",
+                8.0, 2.0, 3.0, 20,
+                false, false, List.of(), MobCategory.NEUTRAL));
+        registerById(new MobCardDefinition(
+                EntityType.SLIME, "slime_large", "Slime (Large)",
                 16.0, 2.0, 4.0, 20,
                 false, false, List.of(), MobCategory.NEUTRAL));
         register(new MobCardDefinition(
-                EntityType.MAGMA_CUBE, "magma_cube", "Magma Cube",
+                EntityType.MAGMA_CUBE, "magma_cube", "Magma Cube (Small)",
+                4.0, 2.0, 3.0, 20,
+                false, false, List.of(), MobCategory.NETHER));
+        registerById(new MobCardDefinition(
+                EntityType.MAGMA_CUBE, "magma_cube_medium", "Magma Cube (Medium)",
+                8.0, 2.0, 5.0, 20,
+                false, false, List.of(), MobCategory.NETHER));
+        registerById(new MobCardDefinition(
+                EntityType.MAGMA_CUBE, "magma_cube_large", "Magma Cube (Large)",
                 16.0, 2.0, 6.0, 20,
                 false, false, List.of(), MobCategory.NETHER));
 
@@ -107,10 +123,7 @@ public class MobCardRegistry {
                 EntityType.ENDERMAN, "enderman", "Enderman",
                 40.0, 3.5, 7.0, 18,
                 false, false, List.of(), MobCategory.END));
-        register(new MobCardDefinition(
-                EntityType.SHULKER, "shulker", "Shulker",
-                30.0, 0.0, 4.0, 60,   // Shulker is stationary, ranged
-                false, false, List.of(), MobCategory.END));
+        // Shulker removed: stationary mob, doesn't work on arena lanes
 
         // === ILLAGERS ===
         register(new MobCardDefinition(

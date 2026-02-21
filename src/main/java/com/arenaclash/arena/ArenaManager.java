@@ -475,6 +475,9 @@ public class ArenaManager {
 
         // Tick floating damage numbers
         ArenaMob.tickDamageNumbers(arenaWorld);
+
+        // Cleanup stray projectiles (arrows stuck in ground, old fireballs, etc.)
+        ArenaMob.tickProjectileCleanup(arenaWorld);
     }
 
     /**
@@ -530,11 +533,13 @@ public class ArenaManager {
             for (ArenaMob mob : activeMobs) {
                 mob.removeEntity(arenaWorld);
             }
-            // Clean up floating damage numbers
+            // Clean up floating damage numbers, HP bars, arrows, projectiles
             List<Entity> toRemove = new ArrayList<>();
             for (Entity e : arenaWorld.iterateEntities()) {
                 if (e.getCommandTags().contains("arenaclash_dmg_number")
-                        || e.getCommandTags().contains("arenaclash_tower_arrow")) {
+                        || e.getCommandTags().contains("arenaclash_tower_arrow")
+                        || e.getCommandTags().contains("arenaclash_mob_hp")
+                        || e.getCommandTags().contains("arenaclash_mob_projectile")) {
                     toRemove.add(e);
                 }
             }

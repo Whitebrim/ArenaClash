@@ -157,7 +157,7 @@ public class ArenaStructure {
         arrow.setCritical(true);
         arrow.addCommandTag("arenaclash_tower_arrow");
         // Set a short life so arrows despawn quickly after visual impact
-        arrow.age = 1140; // Arrow despawns at age 1200, so this gives 60 ticks (~3 sec) before despawn
+        arrow.age = 1190; // Arrow despawns at age 1200, gives ~10 ticks (0.5 sec)
         world.spawnEntity(arrow);
 
         // Apply damage directly (arrow is visual only)

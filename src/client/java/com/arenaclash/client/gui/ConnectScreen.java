@@ -51,6 +51,15 @@ public class ConnectScreen extends Screen {
             client.setScreen(parent);
         }).dimensions(width / 2 - 50, height - 40, 100, 20).build());
 
+        // Continue button — visible when TCP connected and game in progress
+        var tcpContinue = ArenaClashClient.getTcpClient();
+        if (tcpContinue != null && tcpContinue.isConnected() && !"LOBBY".equals(tcpContinue.currentPhase)) {
+            addDrawableChild(ButtonWidget.builder(Text.literal("§a▶ Continue"), button -> {
+                ArenaClashClient.scheduleReturnToGame();
+                client.setScreen(parent);
+            }).dimensions(width / 2 - 100, 140, 200, 20).build());
+        }
+
         updateStatus();
     }
 
