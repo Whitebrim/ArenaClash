@@ -108,6 +108,18 @@ public class ArenaClashTcpServer {
                     existingSession.disconnect();
                 }
 
+                // Fallback: look up team from GameManager if old session had no team
+                // (e.g. session was cleaned up before reconnect)
+                GameManager gm = GameManager.getInstance();
+                if (reconnectTeam == null && gm.isGameActive()) {
+                    TeamSide teamFromGm = gm.getPlayerTeams().get(playerUuid);
+                    if (teamFromGm != null) {
+                        reconnectTeam = teamFromGm;
+                        ArenaClash.LOGGER.info("[ArenaClash TCP] Recovered team {} for {} from GameManager",
+                                reconnectTeam, playerName);
+                    }
+                }
+
                 String sessionId = "session_" + sessionCounter.incrementAndGet();
 
                 session = new TcpSession(sessionId, playerName, playerUuid, socket.getOutputStream());
@@ -170,7 +182,14 @@ public class ArenaClashTcpServer {
                 if (session != null) {
                     ArenaClash.LOGGER.info("[ArenaClash TCP] Player {} disconnected", session.getPlayerName());
                     sessions.remove(session.getSessionId());
-                    sessionsByUuid.remove(session.getPlayerUuid());
+                    // During an active game, keep the session in sessionsByUuid so that
+                    // reconnection can find the old cards/team.  Only the socket is dead.
+                    if (!GameManager.getInstance().isGameActive()) {
+                        sessionsByUuid.remove(session.getPlayerUuid());
+                    } else {
+                        ArenaClash.LOGGER.info("[ArenaClash TCP] Keeping session data for {} (game active, allows reconnect)",
+                                session.getPlayerName());
+                    }
                     session.disconnect();
                     broadcastLobbyUpdate();
                 }
@@ -282,5 +301,20 @@ public class ArenaClashTcpServer {
 
     public boolean hasTwoPlayers() {
         return sessions.size() >= 2;
+    }
+
+    /**
+     * Remove dead sessions from sessionsByUuid that are no longer in the active sessions map.
+     * Called when game ends/resets to clean up reconnection holdovers.
+     */
+    public void cleanupStaleSessions() {
+        sessionsByUuid.entrySet().removeIf(entry -> {
+            TcpSession s = entry.getValue();
+            if (!s.isAlive() && !sessions.containsKey(s.getSessionId())) {
+                ArenaClash.LOGGER.info("[ArenaClash TCP] Cleaned up stale session for {}", s.getPlayerName());
+                return true;
+            }
+            return false;
+        });
     }
 }

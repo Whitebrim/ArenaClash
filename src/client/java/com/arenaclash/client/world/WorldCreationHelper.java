@@ -99,6 +99,18 @@ public class WorldCreationHelper {
             return;
         }
 
+        // Reconnection fallback: if currentWorldDirName is null (e.g. MC was restarted),
+        // try to find an existing ArenaClash world on disk
+        if (currentWorldDirName == null) {
+            String found = findExistingArenaClashWorld(client);
+            if (found != null) {
+                LOGGER.info("Found existing ArenaClash world '{}' on disk (reconnection recovery)", found);
+                currentWorldDirName = found;
+                loadExistingWorld(client, found);
+                return;
+            }
+        }
+
         // Round 1: create a brand-new world
         String worldName = WORLD_NAME_PREFIX + System.currentTimeMillis();
         LOGGER.info("Creating new world '{}' seed={} round={}", worldName, seed, round);
@@ -261,6 +273,30 @@ public class WorldCreationHelper {
     // ====================================================================
     // CLEANUP
     // ====================================================================
+
+    /**
+     * Scan the saves directory for an existing ArenaClash_* world.
+     * Returns the directory name of the most recently modified one, or null if none found.
+     */
+    private static String findExistingArenaClashWorld(MinecraftClient client) {
+        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        try {
+            if (!Files.exists(savesDir)) return null;
+            try (var dirs = Files.list(savesDir)) {
+                return dirs.filter(Files::isDirectory)
+                        .filter(p -> p.getFileName().toString().startsWith(WORLD_NAME_PREFIX))
+                        .max(java.util.Comparator.comparingLong(p -> {
+                            try { return Files.getLastModifiedTime(p).toMillis(); }
+                            catch (IOException e) { return 0L; }
+                        }))
+                        .map(p -> p.getFileName().toString())
+                        .orElse(null);
+            }
+        } catch (IOException e) {
+            LOGGER.warn("Could not scan saves directory for existing ArenaClash worlds", e);
+            return null;
+        }
+    }
 
     /** Delete every ArenaClash_* save from disk. */
     public static void cleanupOldWorlds() {

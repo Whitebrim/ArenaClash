@@ -748,6 +748,8 @@ public class GameManager {
             tcpServer.broadcast(SyncProtocol.returnToSingle());
             // Game is no longer active after this point
             gameActive = false;
+            // Clean up stale reconnect-holdover sessions
+            if (tcpServer != null) tcpServer.cleanupStaleSessions();
         }
     }
 
@@ -1046,6 +1048,7 @@ public class GameManager {
         }
 
         if (tcpServer != null) {
+            tcpServer.cleanupStaleSessions();
             tcpServer.broadcast(SyncProtocol.serverMessage("§cGame reset!"));
             tcpServer.broadcast(SyncProtocol.returnToSingle());
             tcpServer.broadcastLobbyUpdate();

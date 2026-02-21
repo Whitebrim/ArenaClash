@@ -43,15 +43,49 @@ public class GameEventHandlers {
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
-                if (entity instanceof net.minecraft.entity.passive.PassiveEntity passiveEntity) {
-                    if (passiveEntity.isBaby()) return;
+                // Fix 1: Spawner mobs don't give cards
+                if (entity.getCommandTags().contains("arenaclash_spawner_mob")) {
+                    return;
                 }
 
                 String cardId = null;
+
+                // Check baby hostile mobs FIRST — these should give their own type's card.
+                // Must be checked before the PassiveEntity baby filter because some hostile
+                // mobs (HoglinEntity) extend AnimalEntity → PassiveEntity.
+                boolean isBabyHostile = false;
                 if (entity instanceof net.minecraft.entity.mob.ZombieEntity zombie && zombie.isBaby()) {
-                    cardId = "baby_zombie";
-                    if (MobCardRegistry.getById(cardId) == null) return;
+                    isBabyHostile = true;
+                } else if (entity instanceof net.minecraft.entity.mob.PiglinEntity piglin && piglin.isBaby()) {
+                    isBabyHostile = true;
+                } else if (entity instanceof net.minecraft.entity.mob.HoglinEntity hoglin && hoglin.isBaby()) {
+                    isBabyHostile = true;
+                } else if (entity instanceof net.minecraft.entity.mob.ZoglinEntity zoglin && zoglin.isBaby()) {
+                    isBabyHostile = true;
+                }
+
+                if (isBabyHostile) {
+                    // Special case: actual baby zombie (EntityType.ZOMBIE, not subtype) → baby_zombie card
+                    if (entity.getType() == net.minecraft.entity.EntityType.ZOMBIE
+                            && entity instanceof net.minecraft.entity.mob.ZombieEntity z && z.isBaby()) {
+                        cardId = "baby_zombie";
+                        if (MobCardRegistry.getById(cardId) == null) return;
+                    } else {
+                        // All other baby hostile mobs: use their own entity type's card
+                        // (baby husk → husk, baby drowned → drowned, baby piglin → piglin, etc.)
+                        var def = MobCardRegistry.getByEntityType(entity.getType());
+                        if (def != null) {
+                            cardId = def.id();
+                        } else {
+                            return; // Unknown baby hostile mob type, skip
+                        }
+                    }
                 } else {
+                    // Skip baby passive mobs (baby cows, sheep, etc.) — no card for them
+                    if (entity instanceof net.minecraft.entity.passive.PassiveEntity passiveEntity) {
+                        if (passiveEntity.isBaby()) return;
+                    }
+
                     if (!MobCardRegistry.isRegistered(entity.getType())) return;
                     var def = MobCardRegistry.getByEntityType(entity.getType());
                     if (def == null) return;

@@ -146,7 +146,6 @@ com.arenaclash/
 │   └── TeamSide.java        # Team enum
 ├── mixin/
 │   ├── ExperienceOrbMixin.java  # Prevent XP collection
-│   ├── OreBlockMixin.java       # Ore → ingot drops
 │   └── ServerWorldMixin.java    # Prevent XP spawning
 ├── network/
 │   └── NetworkHandler.java  # All packets

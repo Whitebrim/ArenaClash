@@ -149,13 +149,36 @@ public class ArenaClashClient implements ClientModInitializer {
             // Bidirectional inventory sync: restore inventory from arena when returning to singleplayer
             if (!inventoryRestored && pendingInventoryRestore != null && client.player != null) {
                 try {
-                    NbtCompound invNbt = net.minecraft.nbt.StringNbtReader.parse(pendingInventoryRestore);
-                    net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
-                    client.player.getInventory().clear();
-                    client.player.getInventory().readNbt(items);
-                    inventoryRestored = true;
-                    pendingInventoryRestore = null;
+                    String invSnbt = pendingInventoryRestore;
+                    // Must restore on the INTEGRATED SERVER side, not the client side.
+                    // The server is authoritative for inventory; client-only changes get
+                    // overwritten by server sync packets.
+                    var integratedServer = client.getServer();
+                    if (integratedServer != null && integratedServer.isRunning()) {
+                        final String snbt = invSnbt;
+                        integratedServer.execute(() -> {
+                            try {
+                                var serverPlayer = integratedServer.getPlayerManager()
+                                        .getPlayer(client.player.getUuid());
+                                if (serverPlayer != null) {
+                                    net.minecraft.nbt.NbtCompound invNbt =
+                                            net.minecraft.nbt.StringNbtReader.parse(snbt);
+                                    net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
+                                    serverPlayer.getInventory().clear();
+                                    serverPlayer.getInventory().readNbt(items);
+                                    serverPlayer.currentScreenHandler.sendContentUpdates();
+                                    serverPlayer.playerScreenHandler.sendContentUpdates();
+                                }
+                            } catch (Exception e) {
+                                LOGGER.error("Failed to restore inventory on server side", e);
+                            }
+                        });
+                        inventoryRestored = true;
+                        pendingInventoryRestore = null;
+                    }
+                    // else: server not ready yet, will retry next tick
                 } catch (Exception e) {
+                    LOGGER.error("Failed to schedule inventory restore", e);
                     pendingInventoryRestore = null;
                 }
             }
