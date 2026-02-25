@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Intercept outgoing chat messages and commands from the client
@@ -28,12 +29,12 @@ public class ClientChatMixin {
      * and cancel the local singleplayer server execution.
      */
     @Inject(method = "sendCommand", at = @At("HEAD"), cancellable = true)
-    private void arenaclash$interceptCommand(String command, CallbackInfo ci) {
+    private void arenaclash$interceptCommand(String command, CallbackInfoReturnable<?> cir) {
         if (command.startsWith("ac ") || command.equals("ac")) {
             ArenaClashTcpClient tcp = ArenaClashClient.getTcpClient();
             if (tcp != null && tcp.isConnected()) {
                 tcp.sendChat("/" + command);
-                ci.cancel();
+                cir.cancel();
             }
         }
     }
