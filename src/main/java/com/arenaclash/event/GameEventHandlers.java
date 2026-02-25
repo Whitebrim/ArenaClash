@@ -105,14 +105,42 @@ public class GameEventHandlers {
                 var def = MobCardRegistry.getById(finalCardId);
                 if (def == null) return;
 
+                // Check Looting enchantment for bonus card chance (10%/20%/30% per level)
+                boolean bonusCard = false;
+                net.minecraft.item.ItemStack weapon = player.getMainHandStack();
+                if (weapon != null && !weapon.isEmpty()) {
+                    int lootingLevel = 0;
+                    var enchants = weapon.getEnchantments();
+                    for (var entry : enchants.getEnchantments()) {
+                        if (entry.matchesKey(net.minecraft.enchantment.Enchantments.LOOTING)) {
+                            lootingLevel = enchants.getLevel(entry);
+                            break;
+                        }
+                    }
+                    if (lootingLevel > 0) {
+                        float chance = lootingLevel * 0.10f; // 10%/20%/30%
+                        if (player.getRandom().nextFloat() < chance) {
+                            bonusCard = true;
+                        }
+                    }
+                }
+
                 if (!player.getServer().isDedicated()) {
                     if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
                     player.sendMessage(Text.literal("§a+ " + def.displayName() + " card obtained!"));
+                    if (bonusCard) {
+                        com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
+                        player.sendMessage(Text.literal("§6✦ Looting bonus! Extra " + def.displayName() + " card!"));
+                    }
                 } else {
                     GameManager gm = GameManager.getInstance();
                     if (gm.getPhase() == GamePhase.SURVIVAL) {
                         gm.onMobKilled(player, entity.getType());
+                        if (bonusCard) {
+                            gm.onMobKilled(player, entity.getType());
+                            player.sendMessage(Text.literal("§6✦ Looting bonus! Extra " + def.displayName() + " card!"));
+                        }
                     }
                 }
             }
@@ -295,6 +323,30 @@ public class GameEventHandlers {
                 server.execute(() -> {
                     server.execute(() -> gm.onPlayerJoinMc(player));
                 });
+            }
+        });
+
+        // Save player inventory on disconnect so reconnection restores latest state
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+            GameManager gm = GameManager.getInstance();
+            if (!gm.isGameActive()) return;
+
+            var tcpServer = com.arenaclash.ArenaClash.getTcpServer();
+            if (tcpServer == null) return;
+            var session = tcpServer.getSession(player.getUuid());
+            if (session == null) return;
+
+            try {
+                net.minecraft.nbt.NbtCompound invNbt = new net.minecraft.nbt.NbtCompound();
+                net.minecraft.nbt.NbtList items = new net.minecraft.nbt.NbtList();
+                player.getInventory().writeNbt(items);
+                invNbt.put("Items", items);
+                String invSnbt = invNbt.toString();
+                session.setSavedInventoryJson(invSnbt);
+                session.setConnectedToMc(false);
+            } catch (Exception e) {
+                // Ignore - player might be partially disconnected
             }
         });
     }

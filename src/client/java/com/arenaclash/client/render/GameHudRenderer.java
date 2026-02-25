@@ -269,8 +269,8 @@ public class GameHudRenderer {
 
     private static String getPhaseHint(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> "\u26CF Hunt mobs for cards! \u2502 [J] View cards";
-            case "PREPARATION" -> "[J] Deploy mobs \u2502 Bell = Ready";
+            case "SURVIVAL" -> "\u26CF Hunt mobs for cards! \u2502 [Tab] View cards";
+            case "PREPARATION" -> "[Tab] Deploy mobs \u2502 Bell = Ready";
             case "BATTLE" -> "Bell = Retreat \u2502 Watch the fight!";
             case "ROUND_END" -> "Preparing next round...";
             default -> null;

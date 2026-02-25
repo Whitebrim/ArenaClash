@@ -33,8 +33,12 @@ public abstract class TitleScreenMixin extends Screen {
             this.addDrawableChild(ButtonWidget.builder(
                     Text.literal("§a⚔ Continue"),
                     button -> {
-                        // Trigger reconnect to the game without disconnect/connect
-                        com.arenaclash.client.ArenaClashClient.scheduleReturnToGame();
+                        String currentPhaseNow = tcp.currentPhase;
+                        if ("SURVIVAL".equals(currentPhaseNow)) {
+                            com.arenaclash.client.ArenaClashClient.scheduleReturnToSurvival();
+                        } else {
+                            com.arenaclash.client.ArenaClashClient.scheduleReturnToGame();
+                        }
                     }
             ).dimensions(this.width / 2 + 104, this.height / 4 + 72, 100, 20).build());
         }

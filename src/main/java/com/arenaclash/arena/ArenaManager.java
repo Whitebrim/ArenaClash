@@ -473,6 +473,19 @@ public class ArenaManager {
                     experienceEarned.merge(killer, 1, Integer::sum);
                 });
 
+        // Collect deferred child mobs (evoker vexes + slime splits) AFTER iteration
+        // This prevents ConcurrentModificationException from adding during iteration
+        List<ArenaMob> newMobs = new ArrayList<>();
+        for (ArenaMob mob : activeMobs) {
+            if (!mob.getPendingChildMobs().isEmpty()) {
+                newMobs.addAll(mob.getPendingChildMobs());
+                mob.getPendingChildMobs().clear();
+            }
+        }
+        if (!newMobs.isEmpty()) {
+            activeMobs.addAll(newMobs);
+        }
+
         // Tick floating damage numbers
         ArenaMob.tickDamageNumbers(arenaWorld);
 

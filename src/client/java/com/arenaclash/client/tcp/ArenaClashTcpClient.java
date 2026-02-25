@@ -254,10 +254,11 @@ public class ArenaClashTcpClient {
                 // Receive game seed for singleplayer world creation
                 long seed = msg.get("seed").getAsLong();
                 LOGGER.info("Received game seed: {}", seed);
+                ArenaClashClient.lastGameSeed = seed;
                 // Only trigger world creation on round 1
                 // Round 2+ world reload is handled by RETURN_TO_SINGLE
                 if (currentRound <= 1) {
-                    ArenaClashClient.scheduleWorldCreation(seed, 1);
+                    ArenaClashClient.scheduleWorldCreation(seed, 1, true); // NEW GAME
                 }
             }
 
@@ -268,6 +269,7 @@ public class ArenaClashTcpClient {
                 int rTimer = msg.get("timerTicks").getAsInt();
                 String rCards = msg.has("cards") ? msg.get("cards").getAsString() : "";
                 long rSeed = msg.has("seed") ? msg.get("seed").getAsLong() : 0;
+                ArenaClashClient.lastGameSeed = rSeed;
                 ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards, rSeed);
             }
 

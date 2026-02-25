@@ -55,7 +55,14 @@ public class ConnectScreen extends Screen {
         var tcpContinue = ArenaClashClient.getTcpClient();
         if (tcpContinue != null && tcpContinue.isConnected() && !"LOBBY".equals(tcpContinue.currentPhase)) {
             addDrawableChild(ButtonWidget.builder(Text.literal("§a▶ Continue"), button -> {
-                ArenaClashClient.scheduleReturnToGame();
+                String currentPhaseNow = tcpContinue.currentPhase;
+                if ("SURVIVAL".equals(currentPhaseNow)) {
+                    // During survival, return to singleplayer world
+                    ArenaClashClient.scheduleReturnToSurvival();
+                } else {
+                    // During preparation/battle, connect to MC server
+                    ArenaClashClient.scheduleReturnToGame();
+                }
                 client.setScreen(parent);
             }).dimensions(width / 2 - 100, 140, 200, 20).build());
         }

@@ -777,9 +777,16 @@ public class GameManager {
 
     public void onTcpReady(TcpSession session) {
         if (phase == GamePhase.PREPARATION) {
-            readyPlayers.add(session.getPlayerUuid());
-            tcpServer.broadcast(SyncProtocol.serverMessage(
-                    "§e" + session.getPlayerName() + " is ready!"));
+            UUID playerId = session.getPlayerUuid();
+            if (readyPlayers.contains(playerId)) {
+                readyPlayers.remove(playerId);
+                tcpServer.broadcast(SyncProtocol.serverMessage(
+                        "§e" + session.getPlayerName() + " is no longer ready."));
+            } else {
+                readyPlayers.add(playerId);
+                tcpServer.broadcast(SyncProtocol.serverMessage(
+                        "§e" + session.getPlayerName() + " is ready!"));
+            }
         }
     }
 
@@ -854,9 +861,18 @@ public class GameManager {
 
     public void handleTcpBellRing(TcpSession session) {
         if (phase == GamePhase.PREPARATION) {
-            readyPlayers.add(session.getPlayerUuid());
-            tcpServer.broadcast(SyncProtocol.serverMessage(
-                    "§e" + session.getPlayerName() + " is ready!"));
+            UUID playerId = session.getPlayerUuid();
+            if (readyPlayers.contains(playerId)) {
+                // Toggle OFF: un-ready
+                readyPlayers.remove(playerId);
+                tcpServer.broadcast(SyncProtocol.serverMessage(
+                        "§e" + session.getPlayerName() + " is no longer ready."));
+            } else {
+                // Toggle ON: ready
+                readyPlayers.add(playerId);
+                tcpServer.broadcast(SyncProtocol.serverMessage(
+                        "§e" + session.getPlayerName() + " is ready!"));
+            }
         } else if (phase == GamePhase.BATTLE) {
             arenaManager.orderRetreat(session.getTeam());
             session.send(SyncProtocol.serverMessage("§e⚐ Retreat ordered!"));

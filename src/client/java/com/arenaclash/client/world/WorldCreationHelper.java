@@ -31,6 +31,7 @@ public class WorldCreationHelper {
     private static volatile boolean creationPending = false;
     private static volatile long pendingSeed = 0;
     private static volatile int pendingRound = 1;
+    private static volatile boolean pendingIsNewGame = false;
 
     // --- Auto-submit state machine ---
     // After we call CreateWorldScreen.create(), the screen needs a few frames
@@ -52,12 +53,18 @@ public class WorldCreationHelper {
     // ====================================================================
 
     /** Schedule world creation/loading.  Safe to call from any thread. */
-    public static void scheduleWorldCreation(long seed, int round) {
+    public static void scheduleWorldCreation(long seed, int round, boolean isNewGame) {
         pendingSeed = seed;
         pendingRound = round;
+        pendingIsNewGame = isNewGame;
         currentGameSeed = seed;
         creationPending = true;
         gameRulesApplied = false;
+    }
+
+    /** Convenience overload: defaults to NOT a new game (reconnect-safe). */
+    public static void scheduleWorldCreation(long seed, int round) {
+        scheduleWorldCreation(seed, round, false);
     }
 
     /** Must be called every client tick from ArenaClashClient.onTick(). */
@@ -81,11 +88,22 @@ public class WorldCreationHelper {
 
         long seed  = pendingSeed;
         int  round = pendingRound;
+        boolean isNewGame = pendingIsNewGame;
 
-        // Already inside an ArenaClash world?  (possible round 2+)
+        // Already inside an ArenaClash world?
         if (client.isInSingleplayer() && client.getServer() != null) {
             String levelName = client.getServer().getSaveProperties().getLevelName();
             if (levelName != null && levelName.startsWith(WORLD_NAME_PREFIX)) {
+                if (isNewGame) {
+                    // New game: must leave old world and create fresh one
+                    LOGGER.info("New game detected while in old ArenaClash world — disconnecting to create fresh world");
+                    currentWorldDirName = null;
+                    creationPending = true;
+                    client.world.disconnect();
+                    client.disconnect();
+                    return;
+                }
+                // Reconnect or round 2+: stay in current world
                 LOGGER.info("Already in ArenaClash world '{}' — continuing round {}", levelName, round);
                 applyGameRules(client);
                 return;
@@ -99,9 +117,16 @@ public class WorldCreationHelper {
             return;
         }
 
-        // Reconnection fallback: if currentWorldDirName is null (e.g. MC was restarted),
+        // New game: clean up ALL old ArenaClash worlds before creating a new one
+        if (isNewGame) {
+            LOGGER.info("New game: cleaning up old ArenaClash worlds before creating new one");
+            currentWorldDirName = null;
+            cleanupOldWorlds();
+        }
+
+        // Reconnection fallback: if not a new game and currentWorldDirName is null,
         // try to find an existing ArenaClash world on disk
-        if (currentWorldDirName == null) {
+        if (!isNewGame && currentWorldDirName == null) {
             String found = findExistingArenaClashWorld(client);
             if (found != null) {
                 LOGGER.info("Found existing ArenaClash world '{}' on disk (reconnection recovery)", found);
@@ -266,6 +291,7 @@ public class WorldCreationHelper {
         currentWorldDirName = null;
         currentGameSeed     = 0;
         creationPending     = false;
+        pendingIsNewGame    = false;
         autoSubmitPending   = false;
         gameRulesApplied    = false;
     }

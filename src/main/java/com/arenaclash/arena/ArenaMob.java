@@ -82,6 +82,9 @@ public class ArenaMob {
     // Sub-mob flag (vexes spawned by evoker are sub-mobs, they don't return as cards)
     private boolean isSubMob = false;
 
+    // Deferred child mobs (vexes, slime splits) — added to activeMobs AFTER iteration
+    private final List<ArenaMob> pendingChildMobs = new ArrayList<>();
+
     public ArenaMob(UUID ownerId, TeamSide team, MobCard card, Lane.LaneId lane, BlockPos startSlotPos) {
         this.ownerId = ownerId;
         this.team = team;
@@ -106,6 +109,20 @@ public class ArenaMob {
     public boolean isDead() { return markedDead || state == MobState.DEAD; }
     public boolean isSubMob() { return isSubMob; }
     public void setSubMob(boolean sub) { this.isSubMob = sub; }
+    public List<ArenaMob> getPendingChildMobs() { return pendingChildMobs; }
+
+    private boolean isSlimeType() {
+        String id = sourceCard.getMobId();
+        return id.startsWith("slime") || id.startsWith("magma_cube");
+    }
+
+    /** Get the "size" of this slime mob from its card ID. Large=4, Medium=2, Small=1 */
+    private int getSlimeSize() {
+        String id = sourceCard.getMobId();
+        if (id.contains("large")) return 4;
+        if (id.contains("medium")) return 2;
+        return 1;
+    }
 
     public double getCurrentHP(ServerWorld world) {
         Entity e = getEntity(world);
@@ -172,6 +189,7 @@ public class ArenaMob {
             case "ghast" -> 16.0;
             case "warden" -> 15.0;
             case "blaze", "wither" -> 12.0;
+            case "evoker" -> 10.0;
             case "skeleton", "stray", "bogged", "pillager" -> 10.0;
             case "guardian", "elder_guardian" -> 10.0;
             case "witch", "snow_golem", "llama", "trader_llama", "breeze" -> 8.0;
@@ -496,9 +514,9 @@ public class ArenaMob {
 
         if (targetEntityId != null) {
             ArenaMob target = findMobByEntityId(allMobs, targetEntityId);
-            if (target == null || target.isDead()) { targetEntityId = null; state = MobState.ADVANCING; return; }
+            if (target == null || target.isDead()) { targetEntityId = null; skipPassedWaypoints(entity); state = MobState.ADVANCING; return; }
             Entity tEnt = target.getEntity(world);
-            if (tEnt == null) { targetEntityId = null; state = MobState.ADVANCING; return; }
+            if (tEnt == null) { targetEntityId = null; skipPassedWaypoints(entity); state = MobState.ADVANCING; return; }
 
             double dist = Math.sqrt(entity.squaredDistanceTo(tEnt));
             faceEntity(entity, tEnt);
@@ -541,7 +559,7 @@ public class ArenaMob {
                 }
             }
         } else if (targetStructure != null) {
-            if (targetStructure.isDestroyed()) { targetStructure = null; state = MobState.ADVANCING; return; }
+            if (targetStructure.isDestroyed()) { targetStructure = null; skipPassedWaypoints(entity); state = MobState.ADVANCING; return; }
             Vec3d sPos = Vec3d.ofCenter(targetStructure.getPosition());
             double dist = hDist(entity.getPos(), sPos);
 
@@ -568,6 +586,7 @@ public class ArenaMob {
             if (enemy != null) { targetEntityId = enemy.getEntityId(); return; }
             ArenaStructure struct = findNearestEnemyStructure(entity, structures, 100.0);
             if (struct != null) { targetStructure = struct; return; }
+            skipPassedWaypoints(entity);
             state = MobState.ADVANCING;
         }
     }
@@ -959,21 +978,22 @@ public class ArenaMob {
                 vexMob.setSubMob(true);
                 if (laneBoundsSet) vexMob.setLaneBounds(laneMinX, laneMaxX, laneMinZ, laneMaxZ);
                 vexMob.spawnHpBar(world, vex);
-                allMobs.add(vexMob);
+                // DEFERRED: add to pendingChildMobs, NOT to allMobs during iteration
+                pendingChildMobs.add(vexMob);
 
                 world.spawnParticles(ParticleTypes.ENCHANTED_HIT, vx, vy + 0.5, vz, 10, 0.3, 0.3, 0.3, 0.2);
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_EVOKER_PREPARE_SUMMON, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
         } else {
-            // Fang attack — spawn evoker fangs entity line toward target
+            // Fang attack — spawn evoker fangs entity line toward target (AoE)
             Vec3d dir = targetEntity.getPos().subtract(attacker.getPos()).normalize();
             float yaw = (float) (Math.atan2(-dir.x, dir.z) * (180.0 / Math.PI));
 
-            for (int i = 1; i <= 5; i++) {
+            // Range increased 1.5x: 8 fangs instead of 5
+            for (int i = 1; i <= 8; i++) {
                 double px = attacker.getX() + dir.x * i * 1.0;
                 double pz = attacker.getZ() + dir.z * i * 1.0;
                 double py = attacker.getY();
-                // Spawn EvokerFangs entity
                 try {
                     net.minecraft.entity.mob.EvokerFangsEntity fangs =
                             new net.minecraft.entity.mob.EvokerFangsEntity(world, px, py, pz, yaw, i * 2,
@@ -981,17 +1001,29 @@ public class ArenaMob {
                     fangs.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(fangs);
                 } catch (Exception ignored) {
-                    // Fallback: just particles
                     world.spawnParticles(ParticleTypes.CLOUD, px, py + 0.3, pz, 3, 0.1, 0.1, 0.1, 0.02);
                 }
             }
             world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_EVOKER_PREPARE_ATTACK, SoundCategory.HOSTILE, 1.0f, 1.0f);
 
-            // Apply direct damage too
+            // AoE damage: hit all enemies within the fang line corridor
             float dmg = (float) attackDamage;
-            defender.takeDamage(dmg, world);
-            spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.5, 0), dmg);
-            if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
+            double fangReach = 8.0;
+            for (ArenaMob nearby : allMobs) {
+                if (nearby.getTeam() == team || nearby.isDead()) continue;
+                Entity nEnt = nearby.getEntity(world);
+                if (nEnt == null) continue;
+                Vec3d toEnemy = nEnt.getPos().subtract(attacker.getPos());
+                double projDist = toEnemy.x * dir.x + toEnemy.z * dir.z;
+                if (projDist > 0 && projDist <= fangReach + 1.0) {
+                    double perpDist = Math.abs(toEnemy.x * (-dir.z) + toEnemy.z * dir.x);
+                    if (perpDist <= 1.5) {
+                        nearby.takeDamage(dmg, world);
+                        spawnDamageNumber(world, nEnt.getPos().add(0, nEnt.getHeight() + 0.5, 0), dmg);
+                        if (nEnt instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
+                    }
+                }
+            }
         }
     }
 
@@ -1049,21 +1081,74 @@ public class ArenaMob {
         markedDead = true;
         state = MobState.DEAD;
         Entity e = getEntity(world);
+
+        // Handle slime splitting: spawn smaller slimes before discarding
+        if (e != null && isSlimeType() && getSlimeSize() > 1) {
+            spawnSlimeSplit(world, e);
+        }
+
         if (e != null) {
             world.spawnParticles(ParticleTypes.SOUL, e.getX(), e.getY() + 0.5, e.getZ(), 10, 0.3, 0.5, 0.3, 0.05);
             world.spawnParticles(ParticleTypes.SMOKE, e.getX(), e.getY() + 0.5, e.getZ(), 8, 0.3, 0.5, 0.3, 0.02);
             world.spawnParticles(ParticleTypes.CLOUD, e.getX(), e.getY() + 0.5, e.getZ(), 5, 0.2, 0.3, 0.2, 0.03);
             world.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.ENTITY_GENERIC_DEATH, SoundCategory.HOSTILE, 1.0f, 0.8f + world.getRandom().nextFloat() * 0.4f);
-            // Use discard() to prevent vanilla split behavior (slimes) and loot drops
             e.discard();
         }
         removeHpBar(world);
-        // Kill any vexes belonging to this evoker
         for (UUID vexId : evokerVexIds) {
             Entity vex = world.getEntity(vexId);
             if (vex != null) vex.discard();
         }
         evokerVexIds.clear();
+    }
+
+    /**
+     * Spawn smaller slimes when a large/medium slime dies.
+     * Children fight on the same team and can be recovered as cards if they retreat.
+     */
+    private void spawnSlimeSplit(ServerWorld world, Entity parent) {
+        int currentSize = getSlimeSize();
+        String baseType = sourceCard.getMobId().startsWith("magma_cube") ? "magma_cube" : "slime";
+        String childCardId;
+        if (currentSize >= 4) {
+            childCardId = baseType + "_medium";
+        } else if (currentSize >= 2) {
+            childCardId = baseType; // small slime
+        } else {
+            return; // small slimes don't split
+        }
+
+        var childDef = com.arenaclash.card.MobCardRegistry.getById(childCardId);
+        if (childDef == null) return;
+
+        int childCount = 2 + world.getRandom().nextInt(2); // 2-3 children
+        for (int i = 0; i < childCount; i++) {
+            MobCard childCard = new MobCard(childCardId);
+            ArenaMob childMob = new ArenaMob(ownerId, team, childCard, lane, startSlotPos);
+
+            double ox = (world.getRandom().nextDouble() - 0.5) * 1.5;
+            double oz = (world.getRandom().nextDouble() - 0.5) * 1.5;
+            BlockPos childPos = new BlockPos(
+                    (int)(parent.getX() + ox),
+                    parent.getBlockPos().getY(),
+                    (int)(parent.getZ() + oz));
+
+            childMob.spawn(world, childPos);
+            if (laneBoundsSet) {
+                childMob.setLaneBounds(laneMinX, laneMaxX, laneMinZ, laneMaxZ);
+            }
+            if (waypoints != null) {
+                childMob.waypoints = new ArrayList<>(waypoints);
+                childMob.currentWaypointIndex = currentWaypointIndex;
+            }
+            childMob.state = MobState.ADVANCING;
+            childMob.setSubMob(false); // CAN be recovered as cards on retreat
+
+            pendingChildMobs.add(childMob);
+        }
+
+        world.playSound(null, parent.getX(), parent.getY(), parent.getZ(),
+                SoundEvents.ENTITY_SLIME_SQUISH, SoundCategory.HOSTILE, 1.0f, 0.8f);
     }
 
     // ================================================================
@@ -1081,6 +1166,30 @@ public class ArenaMob {
             tv = Vec3d.ofCenter(target);
         }
         moveToward(entity, tv);
+    }
+
+    /**
+     * After a fight, the mob may have moved past its current waypoint.
+     * Skip any waypoints that are behind us (closer to our start than to the next waypoint).
+     * This prevents the mob from walking backward after winning a fight.
+     */
+    private void skipPassedWaypoints(Entity entity) {
+        if (waypoints == null || waypoints.size() <= 1) return;
+        Vec3d pos = entity.getPos();
+        // Skip waypoints we've already passed: if the NEXT waypoint is closer than
+        // the current one, it means we're past the current waypoint
+        while (currentWaypointIndex < waypoints.size() - 1) {
+            Vec3d current = Vec3d.ofCenter(waypoints.get(currentWaypointIndex));
+            Vec3d next = Vec3d.ofCenter(waypoints.get(currentWaypointIndex + 1));
+            double distCurrent = hDist(pos, current);
+            double distNext = hDist(pos, next);
+            // If we're within reach of current, or the next is closer, skip current
+            if (distCurrent <= 1.5 || distNext < distCurrent) {
+                currentWaypointIndex++;
+            } else {
+                break;
+            }
+        }
     }
 
     private void moveToward(Entity entity, Vec3d target) {
@@ -1236,10 +1345,13 @@ public class ArenaMob {
             boolean isMobProj = e.getCommandTags().contains("arenaclash_mob_projectile");
             boolean isTowerArrow = e.getCommandTags().contains("arenaclash_tower_arrow");
             if (isMobProj || isTowerArrow) {
-                // Remove projectiles older than 2 seconds (40 ticks)
-                if (e.age > 40) toRemove.add(e);
-                // Remove arrows that stopped moving (stuck in ground)
-                if (e instanceof ArrowEntity && e.getVelocity().lengthSquared() < 0.001) toRemove.add(e);
+                // Tower arrows: let them fly and stick visually, remove after 5 sec
+                if (isTowerArrow) {
+                    if (e.age > 100) toRemove.add(e);
+                } else {
+                    // Mob projectiles: remove after 3 sec
+                    if (e.age > 60) toRemove.add(e);
+                }
             }
         }
         toRemove.forEach(Entity::discard);

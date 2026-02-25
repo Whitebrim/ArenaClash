@@ -8,10 +8,13 @@ import com.arenaclash.client.world.WorldCreationHelper;
 import com.arenaclash.network.NetworkHandler;
 import com.arenaclash.tcp.SyncProtocol;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
@@ -49,6 +52,7 @@ public class ArenaClashClient implements ClientModInitializer {
     private static volatile boolean scheduledReturnToSingle = false;
     private static volatile boolean scheduledReturnToTitle = false;
     private static volatile boolean scheduledReturnToGame = false;
+    private static volatile boolean scheduledReturnToSurvival = false;
 
     // Last known MC server address for Continue button
     private static String lastMcHost = null;
@@ -74,6 +78,9 @@ public class ArenaClashClient implements ClientModInitializer {
     // Config file for persistent IP address 
     private static final String CONFIG_FILE = "arenaclash_client.txt";
 
+    // Stored game seed for Continue button during SURVIVAL
+    public static long lastGameSeed = 0;
+
     @Override
     public void onInitializeClient() {
         openCardsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -85,10 +92,44 @@ public class ArenaClashClient implements ClientModInitializer {
         loadSavedAddress();
 
         registerMcPacketHandlers();
+        registerClientCommands();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) ->
                 GameHudRenderer.render(drawContext, renderTickCounter));
+    }
+
+    /**
+     * Register client-side /ac commands that intercept before the integrated server.
+     * When connected to TCP, all /ac commands are forwarded to the dedicated server.
+     * This prevents the integrated server from executing /ac locally (which would
+     * show "no game in progress" since the game runs on the dedicated server).
+     */
+    private void registerClientCommands() {
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            // /ac <anything> → forward via TCP
+            dispatcher.register(ClientCommandManager.literal("ac")
+                    .then(ClientCommandManager.argument("args", StringArgumentType.greedyString())
+                            .executes(ctx -> {
+                                String args = StringArgumentType.getString(ctx, "args");
+                                ArenaClashTcpClient tcp = getTcpClient();
+                                if (tcp != null && tcp.isConnected()) {
+                                    tcp.sendChat("/ac " + args);
+                                    return 1;
+                                }
+                                ctx.getSource().sendFeedback(Text.literal("§cNot connected to ArenaClash server!"));
+                                return 0;
+                            }))
+                    .executes(ctx -> {
+                        ArenaClashTcpClient tcp = getTcpClient();
+                        if (tcp != null && tcp.isConnected()) {
+                            tcp.sendChat("/ac");
+                            return 1;
+                        }
+                        ctx.getSource().sendFeedback(Text.literal("§cNot connected to ArenaClash server!"));
+                        return 0;
+                    }));
+        });
     }
 
     private void onTick(MinecraftClient client) {
@@ -144,6 +185,12 @@ public class ArenaClashClient implements ClientModInitializer {
                 int port = tcpClient.getServerMcPort();
                 if (host != null) connectToMcServer(client, host, port);
             }
+        }
+
+        // Handle scheduled return to survival (Continue button during SURVIVAL)
+        if (scheduledReturnToSurvival) {
+            scheduledReturnToSurvival = false;
+            returnToSurvival(client);
         }
 
         // Handle world creation ticks 
@@ -296,8 +343,23 @@ public class ArenaClashClient implements ClientModInitializer {
         scheduledReturnToGame = true;
     }
 
+    /** Return to singleplayer survival world from title screen (Continue button during SURVIVAL) */
+    public static void scheduleReturnToSurvival() {
+        scheduledReturnToSurvival = true;
+    }
+
     public static void scheduleWorldCreation(long seed, int round) {
-        WorldCreationHelper.scheduleWorldCreation(seed, round);
+        scheduleWorldCreation(seed, round, false);
+    }
+
+    public static void scheduleWorldCreation(long seed, int round, boolean isNewGame) {
+        if (isNewGame) {
+            // New game: reset old world reference so we don't try to reopen the old one
+            savedSingleplayerWorld = null;
+            worldReadySent = false;
+            inventoryRestored = false;
+        }
+        WorldCreationHelper.scheduleWorldCreation(seed, round, isNewGame);
     }
 
     private void connectToMcServer(MinecraftClient client, String host, int port) {
@@ -345,6 +407,45 @@ public class ArenaClashClient implements ClientModInitializer {
                 });
             }, "ArenaClash-ReconnectSingle").start();
         } else {
+            client.setScreen(new TitleScreen());
+        }
+    }
+
+    /**
+     * Return to survival world from title screen (Continue button during SURVIVAL).
+     * If the world exists, reopen it. Otherwise, create it using stored game seed.
+     */
+    private void returnToSurvival(MinecraftClient client) {
+        LOGGER.info("Returning to survival (world: {}, seed: {})", savedSingleplayerWorld, lastGameSeed);
+
+        if (client.world != null) {
+            client.world.disconnect();
+        }
+        client.disconnect();
+
+        // Try reopening existing world first
+        if (savedSingleplayerWorld != null) {
+            new Thread(() -> {
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                client.execute(() -> {
+                    try {
+                        client.createIntegratedServerLoader().start(savedSingleplayerWorld, () -> {});
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to re-open singleplayer world, creating new", e);
+                        // Fallback: create new world
+                        if (lastGameSeed != 0 && tcpClient != null) {
+                            WorldCreationHelper.scheduleWorldCreation(lastGameSeed, tcpClient.currentRound);
+                        } else {
+                            client.setScreen(new TitleScreen());
+                        }
+                    }
+                });
+            }, "ArenaClash-ReconnectSurvival").start();
+        } else if (lastGameSeed != 0 && tcpClient != null) {
+            // No saved world name — create world from seed
+            WorldCreationHelper.scheduleWorldCreation(lastGameSeed, tcpClient.currentRound);
+        } else {
+            LOGGER.warn("Cannot return to survival: no saved world and no game seed");
             client.setScreen(new TitleScreen());
         }
     }
