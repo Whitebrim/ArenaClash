@@ -80,6 +80,8 @@ public class ArenaClashClient implements ClientModInitializer {
 
     // Stored game seed for Continue button during SURVIVAL
     public static long lastGameSeed = 0;
+    // Game session ID for deterministic world naming
+    public static String lastGameSessionId = null;
 
     @Override
     public void onInitializeClient() {
@@ -349,17 +351,15 @@ public class ArenaClashClient implements ClientModInitializer {
     }
 
     public static void scheduleWorldCreation(long seed, int round) {
-        scheduleWorldCreation(seed, round, false);
+        scheduleWorldCreation(seed);
     }
 
     public static void scheduleWorldCreation(long seed, int round, boolean isNewGame) {
-        if (isNewGame) {
-            // New game: reset old world reference so we don't try to reopen the old one
-            savedSingleplayerWorld = null;
-            worldReadySent = false;
-            inventoryRestored = false;
-        }
-        WorldCreationHelper.scheduleWorldCreation(seed, round, isNewGame);
+        scheduleWorldCreation(seed);
+    }
+
+    public static void scheduleWorldCreation(long seed) {
+        WorldCreationHelper.scheduleWorldCreation(seed);
     }
 
     private void connectToMcServer(MinecraftClient client, String host, int port) {
@@ -434,7 +434,7 @@ public class ArenaClashClient implements ClientModInitializer {
                         LOGGER.error("Failed to re-open singleplayer world, creating new", e);
                         // Fallback: create new world
                         if (lastGameSeed != 0 && tcpClient != null) {
-                            WorldCreationHelper.scheduleWorldCreation(lastGameSeed, tcpClient.currentRound);
+                            WorldCreationHelper.scheduleWorldCreation(lastGameSeed);
                         } else {
                             client.setScreen(new TitleScreen());
                         }
@@ -443,7 +443,7 @@ public class ArenaClashClient implements ClientModInitializer {
             }, "ArenaClash-ReconnectSurvival").start();
         } else if (lastGameSeed != 0 && tcpClient != null) {
             // No saved world name — create world from seed
-            WorldCreationHelper.scheduleWorldCreation(lastGameSeed, tcpClient.currentRound);
+            WorldCreationHelper.scheduleWorldCreation(lastGameSeed);
         } else {
             LOGGER.warn("Cannot return to survival: no saved world and no game seed");
             client.setScreen(new TitleScreen());
@@ -464,6 +464,13 @@ public class ArenaClashClient implements ClientModInitializer {
         currentPhase = "LOBBY";
         timerTicks = 0;
         currentRound = 0;
+        lastGameSessionId = null;
+
+        // Disconnect TCP so Continue button disappears on title screen
+        if (tcpClient != null) {
+            tcpClient.disconnect();
+            tcpClient = null;
+        }
 
         new Thread(() -> {
             try { Thread.sleep(500); } catch (InterruptedException ignored) {}
@@ -473,6 +480,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 if (worldToDelete != null) {
                     WorldCreationHelper.deleteWorld(worldToDelete);
                 }
+                WorldCreationHelper.reset();
             });
         }, "ArenaClash-ReturnTitle").start();
     }
@@ -523,7 +531,7 @@ public class ArenaClashClient implements ClientModInitializer {
         if ("SURVIVAL".equals(phase)) {
             // Need to be in singleplayer world
             if (seed != 0) {
-                WorldCreationHelper.scheduleWorldCreation(seed, round);
+                WorldCreationHelper.scheduleWorldCreation(seed);
             }
         } else if ("PREPARATION".equals(phase) || "BATTLE".equals(phase)) {
             // Need to connect to MC server for arena

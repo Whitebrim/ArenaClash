@@ -251,15 +251,14 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_GAME_SEED -> {
-                // Receive game seed for singleplayer world creation
                 long seed = msg.get("seed").getAsLong();
-                LOGGER.info("Received game seed: {}", seed);
+                String gsId = msg.has("gameSessionId") ? msg.get("gameSessionId").getAsString() : null;
+                LOGGER.info("Received game seed: {}, sessionId: {}", seed, gsId);
                 ArenaClashClient.lastGameSeed = seed;
-                // Only trigger world creation on round 1
-                // Round 2+ world reload is handled by RETURN_TO_SINGLE
-                if (currentRound <= 1) {
-                    ArenaClashClient.scheduleWorldCreation(seed, 1, true); // NEW GAME
-                }
+                ArenaClashClient.lastGameSessionId = gsId;
+                // Schedule world creation — WorldCreationHelper uses gameSessionId
+                // to decide whether to load existing or create new
+                ArenaClashClient.scheduleWorldCreation(seed);
             }
 
             case SyncProtocol.S2C_RECONNECT_STATE -> {
@@ -269,7 +268,17 @@ public class ArenaClashTcpClient {
                 int rTimer = msg.get("timerTicks").getAsInt();
                 String rCards = msg.has("cards") ? msg.get("cards").getAsString() : "";
                 long rSeed = msg.has("seed") ? msg.get("seed").getAsLong() : 0;
+                String rGsId = msg.has("gameSessionId") ? msg.get("gameSessionId").getAsString() : null;
+
+                // CRITICAL: Update TcpClient state so subsequent messages
+                // (like GAME_SEED) are handled correctly
+                currentPhase = rPhase;
+                currentRound = rRound;
+                timerTicks = rTimer;
+                com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(rPhase);
+
                 ArenaClashClient.lastGameSeed = rSeed;
+                ArenaClashClient.lastGameSessionId = rGsId;
                 ArenaClashClient.onReconnectState(rPhase, rRound, rTimer, rCards, rSeed);
             }
 

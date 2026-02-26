@@ -64,6 +64,7 @@ public class GameManager {
 
     private boolean gameActive = false;
     private long currentGameSeed = 0;
+    private String gameSessionId = null;
     private int battleEndGraceTicks = -1; // grace period after all mobs dead before ending round
 
     // Pause state
@@ -152,12 +153,15 @@ public class GameManager {
         gameActive = true;
         currentRound = 1;
 
+        // Generate unique game session ID for world naming
+        gameSessionId = UUID.randomUUID().toString().substring(0, 8);
+
         // Generate game seed
         long seed = cfg.gameSeed != 0 ? cfg.gameSeed : new java.util.Random().nextLong();
         this.currentGameSeed = seed;
 
-        // Send game seed to all clients for singleplayer world creation
-        tcpServer.broadcast(SyncProtocol.gameSeed(seed));
+        // Send game seed + session ID to all clients for singleplayer world creation
+        tcpServer.broadcast(SyncProtocol.gameSeed(seed, gameSessionId));
 
         // Start survival phase (players stay in singleplayer)
         startSurvivalPhase();
@@ -204,7 +208,7 @@ public class GameManager {
         tcpServer.broadcast(SyncProtocol.phaseChange("SURVIVAL", currentRound, phaseTicksRemaining));
 
         // Send seed so clients can create/reload their world 
-        tcpServer.broadcast(SyncProtocol.gameSeed(currentGameSeed));
+        tcpServer.broadcast(SyncProtocol.gameSeed(currentGameSeed, gameSessionId));
 
         // If players are on MC server, tell them to disconnect
         tcpServer.broadcast(SyncProtocol.returnToSingle());
@@ -1118,4 +1122,5 @@ public class GameManager {
 
     public MinecraftServer getServer() { return server; }
     public long getCurrentGameSeed() { return currentGameSeed; }
+    public String getGameSessionId() { return gameSessionId; }
 }

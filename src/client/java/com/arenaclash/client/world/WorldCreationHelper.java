@@ -30,12 +30,8 @@ public class WorldCreationHelper {
     // --- Pending creation request ---
     private static volatile boolean creationPending = false;
     private static volatile long pendingSeed = 0;
-    private static volatile int pendingRound = 1;
-    private static volatile boolean pendingIsNewGame = false;
 
     // --- Auto-submit state machine ---
-    // After we call CreateWorldScreen.create(), the screen needs a few frames
-    // to fully initialise its WorldCreator.  We wait, then configure + submit.
     private static volatile boolean autoSubmitPending = false;
     private static String autoSubmitWorldName = null;
     private static long autoSubmitSeed = 0;
@@ -52,22 +48,25 @@ public class WorldCreationHelper {
     // PUBLIC API
     // ====================================================================
 
-    /** Schedule world creation/loading.  Safe to call from any thread. */
-    public static void scheduleWorldCreation(long seed, int round, boolean isNewGame) {
+    /** Schedule world creation/loading. Safe to call from any thread. */
+    public static void scheduleWorldCreation(long seed) {
         pendingSeed = seed;
-        pendingRound = round;
-        pendingIsNewGame = isNewGame;
         currentGameSeed = seed;
         creationPending = true;
         gameRulesApplied = false;
     }
 
-    /** Convenience overload: defaults to NOT a new game (reconnect-safe). */
-    public static void scheduleWorldCreation(long seed, int round) {
-        scheduleWorldCreation(seed, round, false);
-    }
-
-    /** Must be called every client tick from ArenaClashClient.onTick(). */
+    /**
+     * The entire world selection logic is based on gameSessionId:
+     *
+     * 1. World name = "ArenaClash_" + gameSessionId
+     * 2. Already inside that world? → stay
+     * 3. Inside a DIFFERENT ArenaClash_ world? → disconnect, re-enter pending
+     * 4. World exists on disk? → load it
+     * 5. World doesn't exist? → delete old worlds, create new one
+     *
+     * No isNewGame flags, no round checks. gameSessionId is the single source of truth.
+     */
     public static void tickPending(MinecraftClient client) {
         // ---- auto-submit state machine ----
         if (autoSubmitPending) {
@@ -75,71 +74,59 @@ public class WorldCreationHelper {
                 autoSubmitPending = false;
                 doAutoSubmit(client);
             }
-            return;                             // don't process creation while submitting
+            return;
         }
 
         // ---- pending creation request ----
         if (!creationPending) {
-            // Still tick: apply game rules once when world finishes loading
             applyGameRulesOnceIfNeeded(client);
             return;
         }
         creationPending = false;
 
-        long seed  = pendingSeed;
-        int  round = pendingRound;
-        boolean isNewGame = pendingIsNewGame;
+        long seed = pendingSeed;
+        String gsId = com.arenaclash.client.ArenaClashClient.lastGameSessionId;
 
-        // Already inside an ArenaClash world?
-        if (client.isInSingleplayer() && client.getServer() != null) {
-            String levelName = client.getServer().getSaveProperties().getLevelName();
-            if (levelName != null && levelName.startsWith(WORLD_NAME_PREFIX)) {
-                if (isNewGame) {
-                    // New game: must leave old world and create fresh one
-                    LOGGER.info("New game detected while in old ArenaClash world — disconnecting to create fresh world");
-                    currentWorldDirName = null;
-                    creationPending = true;
-                    client.world.disconnect();
-                    client.disconnect();
-                    return;
-                }
-                // Reconnect or round 2+: stay in current world
-                LOGGER.info("Already in ArenaClash world '{}' — continuing round {}", levelName, round);
-                applyGameRules(client);
-                return;
-            }
-        }
-
-        // Round 2+: just reload the world created in round 1
-        if (round > 1 && currentWorldDirName != null) {
-            LOGGER.info("Reloading world '{}' for round {}", currentWorldDirName, round);
-            loadExistingWorld(client, currentWorldDirName);
+        // No session ID → can't determine world name, skip
+        if (gsId == null || gsId.isEmpty()) {
+            LOGGER.warn("No gameSessionId available, cannot create/load world");
             return;
         }
 
-        // New game: clean up ALL old ArenaClash worlds before creating a new one
-        if (isNewGame) {
-            LOGGER.info("New game: cleaning up old ArenaClash worlds before creating new one");
-            currentWorldDirName = null;
-            cleanupOldWorlds();
-        }
+        String expectedWorldName = WORLD_NAME_PREFIX + gsId;
 
-        // Reconnection fallback: if not a new game and currentWorldDirName is null,
-        // try to find an existing ArenaClash world on disk
-        if (!isNewGame && currentWorldDirName == null) {
-            String found = findExistingArenaClashWorld(client);
-            if (found != null) {
-                LOGGER.info("Found existing ArenaClash world '{}' on disk (reconnection recovery)", found);
-                currentWorldDirName = found;
-                loadExistingWorld(client, found);
+        // Case 1: Already inside the correct ArenaClash world → stay
+        if (client.isInSingleplayer() && client.getServer() != null) {
+            String levelName = client.getServer().getSaveProperties().getLevelName();
+            if (expectedWorldName.equals(levelName)) {
+                LOGGER.info("Already in correct world '{}'", levelName);
+                currentWorldDirName = expectedWorldName;
+                applyGameRules(client);
+                return;
+            }
+            // Case 2: Inside a DIFFERENT ArenaClash world → disconnect first
+            if (levelName != null && levelName.startsWith(WORLD_NAME_PREFIX)) {
+                LOGGER.info("In wrong world '{}', need '{}' — disconnecting", levelName, expectedWorldName);
+                creationPending = true; // re-process next tick after disconnect
+                client.world.disconnect();
+                client.disconnect();
                 return;
             }
         }
 
-        // Round 1: create a brand-new world
-        String worldName = WORLD_NAME_PREFIX + System.currentTimeMillis();
-        LOGGER.info("Creating new world '{}' seed={} round={}", worldName, seed, round);
-        beginWorldCreation(client, worldName, seed);
+        // Case 3: World exists on disk → load it
+        if (worldExistsOnDisk(expectedWorldName)) {
+            LOGGER.info("Found world '{}' on disk — loading", expectedWorldName);
+            currentWorldDirName = expectedWorldName;
+            loadExistingWorld(client, expectedWorldName);
+            return;
+        }
+
+        // Case 4: World doesn't exist → clean up old worlds, create new one
+        LOGGER.info("World '{}' not found — cleaning up old worlds and creating new", expectedWorldName);
+        cleanupOldWorlds();
+        currentWorldDirName = expectedWorldName;
+        beginWorldCreation(client, expectedWorldName, seed);
     }
 
     // ====================================================================
@@ -291,7 +278,6 @@ public class WorldCreationHelper {
         currentWorldDirName = null;
         currentGameSeed     = 0;
         creationPending     = false;
-        pendingIsNewGame    = false;
         autoSubmitPending   = false;
         gameRulesApplied    = false;
     }
@@ -299,6 +285,17 @@ public class WorldCreationHelper {
     // ====================================================================
     // CLEANUP
     // ====================================================================
+
+    /**
+     * Check if a world with the given directory name exists on disk.
+     */
+    private static boolean worldExistsOnDisk(String dirName) {
+        if (dirName == null) return false;
+        MinecraftClient client = MinecraftClient.getInstance();
+        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        Path worldDir = savesDir.resolve(dirName);
+        return Files.exists(worldDir) && Files.isDirectory(worldDir);
+    }
 
     /**
      * Scan the saves directory for an existing ArenaClash_* world.

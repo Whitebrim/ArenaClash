@@ -154,7 +154,8 @@ public class ArenaClashTcpServer {
                             gm2.getCurrentRound(),
                             gm2.getPhaseTicksRemaining(),
                             cardsSnbt,
-                            gm2.getCurrentGameSeed()
+                            gm2.getCurrentGameSeed(),
+                            gm2.getGameSessionId()
                     ));
                     ArenaClash.LOGGER.info("[ArenaClash TCP] Sent reconnect state to {}", playerName);
                 }

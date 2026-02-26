@@ -214,9 +214,10 @@ public class SyncProtocol {
         return msg;
     }
 
-    public static JsonObject gameSeed(long seed) {
+    public static JsonObject gameSeed(long seed, String gameSessionId) {
         JsonObject msg = makeMessage(S2C_GAME_SEED);
         msg.addProperty("seed", seed);
+        if (gameSessionId != null) msg.addProperty("gameSessionId", gameSessionId);
         return msg;
     }
 
@@ -226,13 +227,14 @@ public class SyncProtocol {
         return msg;
     }
 
-    public static JsonObject reconnectState(String phase, int round, int timerTicks, String cardsSnbt, long seed) {
+    public static JsonObject reconnectState(String phase, int round, int timerTicks, String cardsSnbt, long seed, String gameSessionId) {
         JsonObject msg = makeMessage(S2C_RECONNECT_STATE);
         msg.addProperty("phase", phase);
         msg.addProperty("round", round);
         msg.addProperty("timerTicks", timerTicks);
         msg.addProperty("cards", cardsSnbt);
         msg.addProperty("seed", seed);
+        if (gameSessionId != null) msg.addProperty("gameSessionId", gameSessionId);
         return msg;
     }
 

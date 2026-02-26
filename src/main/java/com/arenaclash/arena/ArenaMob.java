@@ -619,7 +619,8 @@ public class ArenaMob {
         Entity dEnt = defender.getEntity(world);
         if (dEnt == null) return;
 
-        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+        // Trigger attack animation
+        triggerAttackAnimation(attacker, world);
 
         float dmg = (float) attackDamage;
 
@@ -681,7 +682,7 @@ public class ArenaMob {
         Entity targetEntity = defender.getEntity(world);
         if (targetEntity == null) return;
 
-        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+        triggerAttackAnimation(attacker, world);
 
         String mobId = sourceCard.getMobId();
         Vec3d shootFrom = attacker.getPos().add(0, attacker.getHeight() * 0.7, 0);
@@ -940,7 +941,7 @@ public class ArenaMob {
         Entity targetEntity = defender.getEntity(world);
         if (targetEntity == null) return;
 
-        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+        triggerAttackAnimation(attacker, world);
 
         // Alternate between vex summoning and fang attack
         int liveVexes = (int) evokerVexIds.stream()
@@ -1033,7 +1034,7 @@ public class ArenaMob {
 
     private void performStructureAttack(Entity attacker, ArenaStructure structure, ServerWorld world) {
         if (structure.isDestroyed() || attackDamage <= 0) return;
-        if (attacker instanceof LivingEntity la) la.swingHand(la.getActiveHand());
+        triggerAttackAnimation(attacker, world);
 
         float dmg = (float) attackDamage;
         structure.damage(dmg, world);
@@ -1043,6 +1044,29 @@ public class ArenaMob {
         world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
         world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
         spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
+    }
+
+    /**
+     * Trigger the proper attack animation for this mob type.
+     * - Humanoid mobs (zombies, skeletons, piglins): swingHand works
+     * - Iron Golem: needs entity status 4 for its signature arm-sweep animation
+     * - Ravager: entity status 4 for attack lunge
+     * - Other mobs: entity status 4 is a generic attack trigger
+     * We send both swingHand (for humanoids) and entity status (for non-humanoids).
+     */
+    private void triggerAttackAnimation(Entity attacker, ServerWorld world) {
+        if (attacker instanceof LivingEntity la) {
+            la.swingHand(la.getActiveHand());
+        }
+        // Entity status 4 = PLAY_ATTACK_SOUND / attack animation
+        // This triggers native attack animations for mobs like Iron Golem,
+        // Ravager, Hoglin, Zoglin, etc. that don't use swingHand for their animation
+        if (attacker instanceof net.minecraft.entity.passive.IronGolemEntity
+                || attacker instanceof net.minecraft.entity.mob.RavagerEntity
+                || attacker instanceof net.minecraft.entity.mob.HoglinEntity
+                || attacker instanceof net.minecraft.entity.mob.ZoglinEntity) {
+            world.sendEntityStatus(attacker, (byte) 4);
+        }
     }
 
     private void playAttackSound(ServerWorld world, Vec3d pos) {
