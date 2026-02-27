@@ -321,8 +321,10 @@ public class ArenaMob {
             bar.append(i < filled ? hpColor + "|" : "\u00A78|");
         }
         String teamColor = (team == TeamSide.PLAYER1) ? "\u00A79" : "\u00A7c";
-        String name = sourceCard.getDefinition() != null ? sourceCard.getDefinition().displayName() : "Mob";
-        marker.setCustomName(Text.literal(teamColor + name + " " + bar + " " + hpColor + (int) hp));
+        net.minecraft.text.MutableText mobName = sourceCard.getDefinition() != null
+                ? Text.translatable(sourceCard.getDefinition().translationKey())
+                : Text.literal("Mob");
+        marker.setCustomName(Text.literal(teamColor).append(mobName).append(Text.literal(" " + bar + " " + hpColor + (int) hp)));
     }
 
     private void removeHpBar(ServerWorld world) {

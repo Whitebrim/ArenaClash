@@ -209,9 +209,29 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_MESSAGE -> {
-                String text = msg.get("text").getAsString();
                 if (client.player != null) {
-                    client.player.sendMessage(Text.literal(text));
+                    if (msg.has("key")) {
+                        String key = msg.get("key").getAsString();
+                        if (msg.has("args")) {
+                            com.google.gson.JsonArray argsArr = msg.getAsJsonArray("args");
+                            Object[] args = new Object[argsArr.size()];
+                            for (int i = 0; i < argsArr.size(); i++) {
+                                String argStr = argsArr.get(i).getAsString();
+                                // If arg is a translation key, wrap it in Text.translatable()
+                                if (argStr.startsWith("arenaclash.mob.") || argStr.startsWith("arenaclash.category.") || argStr.startsWith("arenaclash.lane.")) {
+                                    args[i] = Text.translatable(argStr);
+                                } else {
+                                    args[i] = argStr;
+                                }
+                            }
+                            client.player.sendMessage(Text.translatable(key, args));
+                        } else {
+                            client.player.sendMessage(Text.translatable(key));
+                        }
+                    } else {
+                        String text = msg.get("text").getAsString();
+                        client.player.sendMessage(Text.literal(text));
+                    }
                 }
             }
 
@@ -227,19 +247,19 @@ public class ArenaClashTcpClient {
                     boolean isWinner = winner.equals(playerName);
                     boolean isDraw = "Draw".equals(winner);
 
-                    client.player.sendMessage(Text.literal("§6§l============================="));
+                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.separator"));
                     if (isDraw) {
-                        client.player.sendMessage(Text.literal("§e§l         DRAW!"));
+                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.draw"));
                     } else if (isWinner) {
-                        client.player.sendMessage(Text.literal("§a§l      VICTORY!"));
+                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.victory"));
                     } else {
-                        client.player.sendMessage(Text.literal("§c§l       DEFEAT"));
+                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.defeat"));
                     }
-                    client.player.sendMessage(Text.literal("§eWinner: §f" + winner));
+                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.winner", winner));
                     if (!details.isEmpty()) {
-                        client.player.sendMessage(Text.literal("§7" + details));
+                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.details", details));
                     }
-                    client.player.sendMessage(Text.literal("§6§l============================="));
+                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.separator"));
                 }
             }
 

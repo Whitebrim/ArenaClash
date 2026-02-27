@@ -5,6 +5,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.resource.language.I18n;
 
 /**
  * Renders polished game HUD overlay:
@@ -92,7 +93,7 @@ public class GameHudRenderer {
             int dotX = screenWidth / 2 - 20;
             int dotY = barY + 19;
             ctx.fill(dotX, dotY, dotX + 4, dotY + 4, dotColor);
-            ctx.drawTextWithShadow(textRenderer, "LIVE", dotX + 7, dotY - 1, 0xFFFF4444);
+            ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.live"), dotX + 7, dotY - 1, 0xFFFF4444);
         }
 
         // Round indicator (left side of bar)
@@ -115,7 +116,7 @@ public class GameHudRenderer {
         // BELL STATUS (during PREPARATION)
         // =============================================
         if ("PREPARATION".equals(phase)) {
-            String bellHint = "\u00A7e\u266A Right-click the Bell to signal ready!";
+            String bellHint = I18n.translate("arenaclash.hud.bell_hint");
             int bellY = barY + barHeight + 16;
             float bellPulse = (float) (Math.sin(animTimer * 2) * 0.3 + 0.7);
             int bellAlpha = (int) (bellPulse * 255);
@@ -136,13 +137,13 @@ public class GameHudRenderer {
             float pulse = (float) (Math.sin(animTimer * 2) * 0.3 + 0.7);
             int glowAlpha = (int) (pulse * 255);
 
-            ctx.drawCenteredTextWithShadow(textRenderer, "\u00A76\u00A7l\u2655 GAME OVER \u2655",
+            ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.game_over.title"),
                     screenWidth / 2, screenHeight / 2 - 20, (glowAlpha << 24) | 0xFFD700);
 
             // Timer showing when returning
             if (timerTicks > 0) {
                 int secs = Math.max(0, timerTicks / 20);
-                ctx.drawCenteredTextWithShadow(textRenderer, "\u00A77Returning in " + secs + "s...",
+                ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.game_over.returning", String.valueOf(secs)),
                         screenWidth / 2, screenHeight / 2 + 10, 0xAAAAAAA);
             }
         }
@@ -214,11 +215,11 @@ public class GameHudRenderer {
 
     private static String getPhaseName(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> "SURVIVAL";
-            case "PREPARATION" -> "PREPARATION";
-            case "BATTLE" -> "BATTLE";
-            case "ROUND_END" -> "ROUND END";
-            case "GAME_OVER" -> "GAME OVER";
+            case "SURVIVAL" -> I18n.translate("arenaclash.hud.phase.survival");
+            case "PREPARATION" -> I18n.translate("arenaclash.hud.phase.preparation");
+            case "BATTLE" -> I18n.translate("arenaclash.hud.phase.battle");
+            case "ROUND_END" -> I18n.translate("arenaclash.hud.phase.round_end");
+            case "GAME_OVER" -> I18n.translate("arenaclash.hud.phase.game_over");
             default -> phase;
         };
     }
@@ -269,10 +270,10 @@ public class GameHudRenderer {
 
     private static String getPhaseHint(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> "\u26CF Hunt mobs for cards! \u2502 [Tab] View cards";
-            case "PREPARATION" -> "[Tab] Deploy mobs \u2502 Bell = Ready";
-            case "BATTLE" -> "Bell = Retreat \u2502 Watch the fight!";
-            case "ROUND_END" -> "Preparing next round...";
+            case "SURVIVAL" -> I18n.translate("arenaclash.hud.hint.survival");
+            case "PREPARATION" -> I18n.translate("arenaclash.hud.hint.preparation");
+            case "BATTLE" -> I18n.translate("arenaclash.hud.hint.battle");
+            case "ROUND_END" -> I18n.translate("arenaclash.hud.hint.round_end");
             default -> null;
         };
     }

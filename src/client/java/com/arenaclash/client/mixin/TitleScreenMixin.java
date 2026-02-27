@@ -23,7 +23,7 @@ public abstract class TitleScreenMixin extends Screen {
     private void arenaclash$addButton(CallbackInfo ci) {
         // Arena Clash button — always visible
         this.addDrawableChild(ButtonWidget.builder(
-                Text.literal("§6⚔ Arena Clash"),
+                Text.translatable("arenaclash.title.button"),
                 button -> this.client.setScreen(new ConnectScreen(this))
         ).dimensions(this.width / 2 + 104, this.height / 4 + 48, 100, 20).build());
 
@@ -31,7 +31,7 @@ public abstract class TitleScreenMixin extends Screen {
         var tcp = com.arenaclash.client.ArenaClashClient.getTcpClient();
         if (tcp != null && tcp.isConnected() && !"LOBBY".equals(tcp.currentPhase)) {
             this.addDrawableChild(ButtonWidget.builder(
-                    Text.literal("§a⚔ Continue"),
+                    Text.translatable("arenaclash.title.continue"),
                     button -> {
                         String currentPhaseNow = tcp.currentPhase;
                         if ("SURVIVAL".equals(currentPhaseNow)) {

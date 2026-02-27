@@ -34,6 +34,21 @@ public record MobCardDefinition(
     }
 
     /**
+     * Returns the translation key for this mob card's display name.
+     * Used with I18n.translate() on client or Text.translatable() on server.
+     */
+    public String translationKey() {
+        return "arenaclash.mob." + id;
+    }
+
+    /**
+     * Returns the translation key for this mob's category.
+     */
+    public String categoryTranslationKey() {
+        return "arenaclash.category." + category.name().toLowerCase();
+    }
+
+    /**
      * Get scaled HP for given level. Stats scale linearly with level.
      */
     public double getHP(int level) {

@@ -108,10 +108,10 @@ public class GameManager {
     /**
      * Start game via /ac start command. Requires 2 TCP-connected players.
      */
-    public String startGame() {
-        if (gameActive) return "Game already in progress! Use /ac reset first.";
+    public Text startGame() {
+        if (gameActive) return Text.translatable("arenaclash.cmd.game_already_active");
         if (tcpServer == null || !tcpServer.hasTwoPlayers()) {
-            return "Need 2 players connected via TCP! (" + (tcpServer != null ? tcpServer.getConnectedCount() : 0) + "/2)";
+            return Text.translatable("arenaclash.cmd.need_players", String.valueOf(tcpServer != null ? tcpServer.getConnectedCount() : 0));
         }
 
         GameConfig cfg = GameConfig.get();
@@ -166,17 +166,16 @@ public class GameManager {
         // Start survival phase (players stay in singleplayer)
         startSurvivalPhase();
 
-        tcpServer.broadcast(SyncProtocol.serverMessage("§6§l=== ARENA CLASH STARTED ==="));
-        tcpServer.broadcast(SyncProtocol.serverMessage(
-                "§eRound 1 - Survival Phase! Hunt mobs to get cards."));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.game_started"));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.round_survival", "1"));
 
-        return "Game started! " + p1.getPlayerName() + " vs " + p2.getPlayerName();
+        return Text.translatable("arenaclash.cmd.game_started_vs", p1.getPlayerName(), p2.getPlayerName());
     }
 
     /**
      * Start game with MC players. Requires active TCP sessions for both.
      */
-    public String startGame(ServerPlayerEntity player1, ServerPlayerEntity player2) {
+    public Text startGame(ServerPlayerEntity player1, ServerPlayerEntity player2) {
         if (tcpServer != null) {
             TcpSession s1 = tcpServer.getSession(player1.getUuid());
             TcpSession s2 = tcpServer.getSession(player2.getUuid());
@@ -184,7 +183,7 @@ public class GameManager {
                 return startGame();
             }
         }
-        return "Both players must be connected via TCP (Arena Clash button on title screen)!";
+        return Text.translatable("arenaclash.cmd.need_tcp");
     }
 
     // ========================================================================
@@ -245,8 +244,7 @@ public class GameManager {
 
         tcpServer.broadcast(SyncProtocol.phaseChange("PREPARATION", currentRound, phaseTicksRemaining));
         tcpServer.broadcast(SyncProtocol.connectToMc(host, mcPort));
-        tcpServer.broadcast(SyncProtocol.serverMessage(
-                "§e⚔ Preparation Phase! Connect to server to place your mobs!"));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.prep_phase"));
 
         syncAllCards();
 
@@ -267,8 +265,8 @@ public class GameManager {
         arenaManager.startBattle();
 
         tcpServer.broadcast(SyncProtocol.phaseChange("BATTLE", currentRound, phaseTicksRemaining));
-        tcpServer.broadcast(SyncProtocol.serverMessage("§c§l⚔ BATTLE START! ⚔"));
-        broadcastMc("§c§l⚔ BATTLE START! ⚔", Formatting.RED);
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.battle_start"));
+        broadcastMcTranslatable("arenaclash.tcp.battle_start");
     }
 
     private void endRound(ArenaManager.BattleResult result) {
@@ -328,8 +326,8 @@ public class GameManager {
                     session.getCardInventory().addCard(card);
                 }
                 if (!recovered.isEmpty()) {
-                    session.send(SyncProtocol.serverMessage(
-                            "§a" + recovered.size() + " mobs returned safely!"));
+                    session.send(SyncProtocol.translatableMessage(
+                            "arenaclash.tcp.mobs_returned", String.valueOf(recovered.size())));
                 }
             }
         }
@@ -342,7 +340,7 @@ public class GameManager {
 
         arenaManager.cleanup();
 
-        tcpServer.broadcast(SyncProtocol.serverMessage("§6Round " + currentRound + " Complete!"));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.round_complete", String.valueOf(currentRound)));
 
         GameConfig cfg = GameConfig.get();
         if (currentRound >= cfg.maxRounds) {
@@ -377,7 +375,7 @@ public class GameManager {
 
         // Send game result with winner/loser details for proper end screen
         tcpServer.broadcast(SyncProtocol.gameResult(winnerName, details));
-        tcpServer.broadcast(SyncProtocol.serverMessage("§6§l=== GAME OVER === Winner: " + winnerName));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.game_over_winner", winnerName));
 
         // Send title screen messages and spawn fireworks for winner
         if (server != null) {
@@ -388,15 +386,15 @@ public class GameManager {
 
                 if (winner == null) {
                     // Draw
-                    showTitle(player, "§e§lDRAW", "§7No clear winner");
+                    showTranslatableTitle(player, "arenaclash.tcp.title.draw", "arenaclash.tcp.subtitle.draw");
                 } else if (playerTeam == winner) {
                     // Winner
-                    showTitle(player, "§a§lVICTORY!", "§6You defeated " + loserName + "!");
+                    showTranslatableTitle(player, "arenaclash.tcp.title.victory", "arenaclash.tcp.subtitle.victory", loserName);
                     // Spawn fireworks around the winner
                     spawnFireworks(player, 10);
                 } else {
                     // Loser
-                    showTitle(player, "§c§lDEFEAT", "§7" + winnerName + " has won");
+                    showTranslatableTitle(player, "arenaclash.tcp.title.defeat", "arenaclash.tcp.subtitle.defeat", winnerName);
                 }
             }
         }
@@ -416,6 +414,30 @@ public class GameManager {
         sb.append(String.format("Throne Damage: P1=%.0f / P2=%.0f | ", p1Throne, p2Throne));
         sb.append(String.format("Towers Destroyed: P1=%d / P2=%d", p1Towers, p2Towers));
         return sb.toString();
+    }
+
+    private void showTranslatableTitle(ServerPlayerEntity player, String titleKey, String subtitleKey, String... args) {
+        if (player == null || player.isDisconnected()) return;
+        try {
+            String playerName = player.getName().getString();
+            String titleJson = toTranslatableJson(titleKey);
+            String subtitleJson = args.length > 0 ? toTranslatableJson(subtitleKey, args) : toTranslatableJson(subtitleKey);
+            String timesCmd = "title " + playerName + " times 10 100 30";
+
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), timesCmd);
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), "title " + playerName + " subtitle " + subtitleJson);
+            server.getCommandManager().executeWithPrefix(
+                    server.getCommandSource().withSilent(), "title " + playerName + " title " + titleJson);
+        } catch (Exception e) {
+            player.sendMessage(Text.translatable(titleKey));
+            if (args.length > 0) {
+                player.sendMessage(Text.translatable(subtitleKey, (Object[]) args));
+            } else {
+                player.sendMessage(Text.translatable(subtitleKey));
+            }
+        }
     }
 
     private void showTitle(ServerPlayerEntity player, String title, String subtitle) {
@@ -443,6 +465,34 @@ public class GameManager {
     private String toJsonText(String text) {
         // Convert §-formatted text to JSON text component
         return "{\"text\":\"" + text.replace("\"", "\\\"") + "\"}";
+    }
+
+    private String toTranslatableJson(String key, String... args) {
+        StringBuilder sb = new StringBuilder("{\"translate\":\"").append(key).append("\"");
+        if (args.length > 0) {
+            sb.append(",\"with\":[");
+            for (int i = 0; i < args.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append("\"").append(args[i].replace("\"", "\\\"")).append("\"");
+            }
+            sb.append("]");
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private void broadcastMcTranslatable(String key, String... args) {
+        if (server == null) return;
+        for (java.util.UUID uuid : playerTeams.keySet()) {
+            ServerPlayerEntity player = getPlayer(uuid);
+            if (player != null) {
+                if (args.length > 0) {
+                    player.sendMessage(Text.translatable(key, (Object[]) args));
+                } else {
+                    player.sendMessage(Text.translatable(key));
+                }
+            }
+        }
     }
 
     private void spawnFireworks(ServerPlayerEntity player, int count) {
@@ -520,45 +570,45 @@ public class GameManager {
 
     // === Pause/Continue/Skip commands ===
 
-    public String pauseGame() {
-        if (!gameActive) return "No game in progress!";
-        if (gamePaused) return "Game is already paused!";
+    public Text pauseGame() {
+        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
+        if (gamePaused) return Text.translatable("arenaclash.cmd.already_paused");
         gamePaused = true;
-        tcpServer.broadcast(SyncProtocol.serverMessage("§e§l⏸ Game paused"));
-        return "Game paused!";
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.paused"));
+        return Text.translatable("arenaclash.cmd.game_paused");
     }
 
-    public String continueGame() {
-        if (!gameActive) return "No game in progress!";
-        if (!gamePaused) return "Game is not paused!";
+    public Text continueGame() {
+        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
+        if (!gamePaused) return Text.translatable("arenaclash.cmd.not_paused");
         gamePaused = false;
-        tcpServer.broadcast(SyncProtocol.serverMessage("§a§l▶ Game resumed"));
-        return "Game resumed!";
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.resumed"));
+        return Text.translatable("arenaclash.cmd.game_resumed");
     }
 
-    public String skipPhase() {
-        if (!gameActive) return "No game in progress!";
+    public Text skipPhase() {
+        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
         switch (phase) {
             case SURVIVAL -> {
                 waitingForWorlds = false;
                 phaseTicksRemaining = 0;
-                tcpServer.broadcast(SyncProtocol.serverMessage("§cSurvival phase skipped!"));
+                tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.survival_skipped"));
                 startPreparationPhase();
-                return "Skipped to preparation phase!";
+                return Text.translatable("arenaclash.cmd.skipped_to_prep");
             }
             case PREPARATION -> {
-                tcpServer.broadcast(SyncProtocol.serverMessage("§cPreparation phase skipped!"));
+                tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.prep_skipped"));
                 startBattlePhase();
-                return "Skipped to battle phase!";
+                return Text.translatable("arenaclash.cmd.skipped_to_battle");
             }
             case BATTLE -> {
-                tcpServer.broadcast(SyncProtocol.serverMessage("§cBattle skipped!"));
+                tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.battle_skipped"));
                 endRound(new ArenaManager.BattleResult(
                         ArenaManager.BattleResult.Type.ALL_MOBS_DEAD, null));
-                return "Skipped battle!";
+                return Text.translatable("arenaclash.cmd.skipped_battle");
             }
             default -> {
-                return "Cannot skip this phase: " + phase;
+                return Text.translatable("arenaclash.cmd.cannot_skip", phase.toString());
             }
         }
     }
@@ -582,10 +632,10 @@ public class GameManager {
         }
         if (allPaused && !gamePaused) {
             gamePaused = true;
-            tcpServer.broadcast(SyncProtocol.serverMessage("§e§l⏸ Game paused (both players paused)"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.both_paused"));
         } else if (!allPaused && gamePaused) {
             gamePaused = false;
-            tcpServer.broadcast(SyncProtocol.serverMessage("§a§l▶ Game resumed"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.resumed"));
         }
     }
 
@@ -597,11 +647,11 @@ public class GameManager {
     public void onPlayerWorldReady(UUID playerUuid) {
         if (!waitingForWorlds) return;
         worldReadyPlayers.add(playerUuid);
-        tcpServer.broadcast(SyncProtocol.serverMessage(
-                "§a" + worldReadyPlayers.size() + "/2 players ready"));
+        tcpServer.broadcast(SyncProtocol.translatableMessage(
+                "arenaclash.tcp.players_ready", String.valueOf(worldReadyPlayers.size())));
         if (worldReadyPlayers.size() >= 2) {
             waitingForWorlds = false;
-            tcpServer.broadcast(SyncProtocol.serverMessage("§a§lBoth worlds created! Timer starting..."));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.worlds_ready"));
         }
     }
 
@@ -651,11 +701,11 @@ public class GameManager {
 
         // Warnings
         if (phaseTicksRemaining == 600) {
-            tcpServer.broadcast(SyncProtocol.serverMessage("§c30 seconds until arena!"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.30_seconds"));
         } else if (phaseTicksRemaining == 200) {
-            tcpServer.broadcast(SyncProtocol.serverMessage("§c10 seconds!"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.10_seconds"));
         } else if (phaseTicksRemaining <= 60 && phaseTicksRemaining > 0 && phaseTicksRemaining % 20 == 0) {
-            tcpServer.broadcast(SyncProtocol.serverMessage("§c" + (phaseTicksRemaining / 20) + "..."));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.countdown", String.valueOf(phaseTicksRemaining / 20)));
         }
 
         if (phaseTicksRemaining <= 0) {
@@ -679,7 +729,7 @@ public class GameManager {
 
         // Check if both ready
         if (readyPlayers.size() >= 2) {
-            tcpServer.broadcast(SyncProtocol.serverMessage("§aBoth players ready!"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.both_ready"));
             startBattlePhase();
             return;
         }
@@ -705,8 +755,8 @@ public class GameManager {
             if (battleEndGraceTicks < 0) {
                 // Start the 10-second grace period
                 battleEndGraceTicks = 200; // 10 seconds
-                tcpServer.broadcast(SyncProtocol.serverMessage("§eAll mobs finished! Round ending in 10 seconds..."));
-                broadcastMc("§eAll mobs finished! Round ending in 10 seconds...", Formatting.YELLOW);
+                tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.mobs_finished"));
+                broadcastMcTranslatable("arenaclash.tcp.mobs_finished");
                 // Send grace timer to clients so they see a countdown
                 tcpServer.broadcast(SyncProtocol.timerSync(battleEndGraceTicks));
             }
@@ -776,7 +826,7 @@ public class GameManager {
 
         session.addCard(def.id());
         tcpServer.syncCards(session);
-        session.send(SyncProtocol.serverMessage("§a+ " + def.displayName() + " card obtained!"));
+        session.send(SyncProtocol.translatableMessage("arenaclash.tcp.card_obtained", def.translationKey()));
     }
 
     public void onTcpReady(TcpSession session) {
@@ -784,12 +834,12 @@ public class GameManager {
             UUID playerId = session.getPlayerUuid();
             if (readyPlayers.contains(playerId)) {
                 readyPlayers.remove(playerId);
-                tcpServer.broadcast(SyncProtocol.serverMessage(
-                        "§e" + session.getPlayerName() + " is no longer ready."));
+                tcpServer.broadcast(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.player_not_ready", session.getPlayerName()));
             } else {
                 readyPlayers.add(playerId);
-                tcpServer.broadcast(SyncProtocol.serverMessage(
-                        "§e" + session.getPlayerName() + " is ready!"));
+                tcpServer.broadcast(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.player_ready", session.getPlayerName()));
             }
         }
     }
@@ -804,26 +854,27 @@ public class GameManager {
             // Mirror lane for PLAYER1 so "LEFT" from their perspective maps to RIGHT in world
             if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
+                slotIndex = mirrorSlotIndex(slotIndex);
             }
 
             MobCard card = session.getCardInventory().getCard(cardId);
             if (card == null) {
-                session.send(SyncProtocol.serverMessage("§cCard not found!"));
+                session.send(SyncProtocol.translatableMessage("arenaclash.tcp.card_not_found"));
                 return;
             }
 
             boolean success = arenaManager.placeMob(team, laneId, slotIndex, card);
             if (success) {
                 session.getCardInventory().removeCard(cardId);
-                session.send(SyncProtocol.serverMessage(
-                        "§aPlaced " + card.getDefinition().displayName() + " on " + laneIdStr));
+                session.send(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.card_placed", card.getDefinition().translationKey(), "arenaclash.lane." + laneIdStr));
                 tcpServer.syncCards(session);
                 syncDeploymentSlots(session);
             } else {
-                session.send(SyncProtocol.serverMessage("§cSlot is occupied!"));
+                session.send(SyncProtocol.translatableMessage("arenaclash.tcp.slot_occupied"));
             }
         } catch (Exception e) {
-            session.send(SyncProtocol.serverMessage("§cInvalid card placement request"));
+            session.send(SyncProtocol.translatableMessage("arenaclash.tcp.invalid_placement"));
         }
     }
 
@@ -836,24 +887,25 @@ public class GameManager {
             // Mirror lane for PLAYER1
             if (team == TeamSide.PLAYER1) {
                 laneId = mirrorLane(laneId);
+                slotIndex = mirrorSlotIndex(slotIndex);
             }
 
             MobCard card = arenaManager.removeMob(team, laneId, slotIndex);
             if (card != null) {
                 session.getCardInventory().addCard(card);
-                session.send(SyncProtocol.serverMessage(
-                        "§eRemoved " + card.getDefinition().displayName()));
+                session.send(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.card_removed", card.getDefinition().translationKey()));
                 tcpServer.syncCards(session);
                 syncDeploymentSlots(session);
             }
         } catch (Exception e) {
-            session.send(SyncProtocol.serverMessage("§cInvalid remove request"));
+            session.send(SyncProtocol.translatableMessage("arenaclash.tcp.invalid_placement"));
         }
     }
 
     /**
-     * Mirror lane IDs for PLAYER2 so their perspective matches their UI.
-     * PLAYER2 faces opposite direction, so their LEFT is world RIGHT.
+     * Mirror lane IDs for PLAYER1 so their perspective matches their UI.
+     * PLAYER1 faces south (+Z), so their LEFT is world RIGHT (+X).
      */
     private Lane.LaneId mirrorLane(Lane.LaneId laneId) {
         return switch (laneId) {
@@ -863,23 +915,32 @@ public class GameManager {
         };
     }
 
+    /**
+     * Mirror slot index within the 2x2 deployment grid for PLAYER1.
+     * PLAYER1 faces the opposite direction (180° rotation), so the entire
+     * grid is flipped: 0↔3, 1↔2 (both rows and columns swap).
+     */
+    private int mirrorSlotIndex(int slotIndex) {
+        return 3 - slotIndex; // 0→3, 1→2, 2→1, 3→0
+    }
+
     public void handleTcpBellRing(TcpSession session) {
         if (phase == GamePhase.PREPARATION) {
             UUID playerId = session.getPlayerUuid();
             if (readyPlayers.contains(playerId)) {
                 // Toggle OFF: un-ready
                 readyPlayers.remove(playerId);
-                tcpServer.broadcast(SyncProtocol.serverMessage(
-                        "§e" + session.getPlayerName() + " is no longer ready."));
+                tcpServer.broadcast(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.player_not_ready", session.getPlayerName()));
             } else {
                 // Toggle ON: ready
                 readyPlayers.add(playerId);
-                tcpServer.broadcast(SyncProtocol.serverMessage(
-                        "§e" + session.getPlayerName() + " is ready!"));
+                tcpServer.broadcast(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.player_ready", session.getPlayerName()));
             }
         } else if (phase == GamePhase.BATTLE) {
             arenaManager.orderRetreat(session.getTeam());
-            session.send(SyncProtocol.serverMessage("§e⚐ Retreat ordered!"));
+            session.send(SyncProtocol.translatableMessage("arenaclash.tcp.retreat_ordered"));
         }
     }
 
@@ -945,7 +1006,9 @@ public class GameManager {
                 if (!slot.isEmpty()) {
                     slotNbt.put("card", slot.getPlacedCard().toNbt());
                 }
-                laneNbt.put("slot_" + i, slotNbt);
+                // Mirror slot index for PLAYER1 so UI columns match world positions
+                int displayIndex = (team == TeamSide.PLAYER1) ? mirrorSlotIndex(i) : i;
+                laneNbt.put("slot_" + displayIndex, slotNbt);
             }
             // Mirror lane names for PLAYER1 so their UI shows correctly
             Lane.LaneId displayLaneId = (team == TeamSide.PLAYER1) ? mirrorLane(laneId) : laneId;
@@ -972,7 +1035,7 @@ public class GameManager {
         if (!gameActive) return;
         TeamSide team = playerTeams.get(player.getUuid());
         if (team == null) {
-            player.sendMessage(Text.literal("§c[ArenaClash] You are not part of the current game."));
+            player.sendMessage(Text.translatable("arenaclash.msg.not_in_game_ac"));
             return;
         }
 
@@ -1023,7 +1086,7 @@ public class GameManager {
                         server.execute(() -> {
                             try {
                                 if (!player.isDisconnected()) {
-                                    player.sendMessage(Text.literal("§c[ArenaClash] Error during arena setup. Try reconnecting."));
+                                    player.sendMessage(Text.translatable("arenaclash.msg.error_setup"));
                                 }
                             } catch (Exception ignored) {}
                         });
@@ -1037,7 +1100,7 @@ public class GameManager {
     // RESET
     // ========================================================================
 
-    public String resetGame() {
+    public Text resetGame() {
         if (worldManager != null && worldManager.getArenaWorld() != null) {
             ArenaBuilder.clearArena(worldManager.getArenaWorld());
         }
@@ -1066,12 +1129,12 @@ public class GameManager {
 
         if (tcpServer != null) {
             tcpServer.cleanupStaleSessions();
-            tcpServer.broadcast(SyncProtocol.serverMessage("§cGame reset!"));
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.game_reset"));
             tcpServer.broadcast(SyncProtocol.returnToSingle());
             tcpServer.broadcastLobbyUpdate();
         }
 
-        return "Game reset!";
+        return Text.translatable("arenaclash.cmd.game_reset_done");
     }
 
     // ========================================================================

@@ -162,6 +162,24 @@ public class SyncProtocol {
         return msg;
     }
 
+    /**
+     * Build a translatable message. The client will use Text.translatable() with these.
+     * @param key Translation key (e.g. "arenaclash.tcp.battle_start")
+     * @param args Arguments for String.format-style placeholders
+     */
+    public static JsonObject translatableMessage(String key, Object... args) {
+        JsonObject msg = makeMessage(S2C_MESSAGE);
+        msg.addProperty("key", key);
+        if (args.length > 0) {
+            com.google.gson.JsonArray argsArray = new com.google.gson.JsonArray();
+            for (Object arg : args) {
+                argsArray.add(String.valueOf(arg));
+            }
+            msg.add("args", argsArray);
+        }
+        return msg;
+    }
+
     public static JsonObject gameResult(String winner, String details) {
         JsonObject msg = makeMessage(S2C_GAME_RESULT);
         msg.addProperty("winner", winner);

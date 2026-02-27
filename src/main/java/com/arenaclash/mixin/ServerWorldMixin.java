@@ -120,7 +120,7 @@ public class ServerWorldMixin {
         mob.addCommandTag("arenaclash_spawner_mob");
 
         // Red ✘ + "Spawner" label above head
-        mob.setCustomName(Text.literal("\u00a7c\u2718 Spawner"));
+        mob.setCustomName(Text.translatable("arenaclash.msg.spawner_tag"));
         mob.setCustomNameVisible(true);
     }
 

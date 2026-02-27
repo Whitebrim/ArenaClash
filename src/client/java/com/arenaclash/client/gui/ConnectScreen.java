@@ -38,7 +38,7 @@ public class ConnectScreen extends Screen {
     }
 
     public ConnectScreen(Screen parent) {
-        super(Text.literal("Arena Clash"));
+        super(Text.translatable("arenaclash.screen.connect.title"));
         this.parent = parent;
     }
 
@@ -56,21 +56,21 @@ public class ConnectScreen extends Screen {
 
         // Address field
         addressField = new TextFieldWidget(textRenderer, contentX, fieldY, contentWidth, 20,
-                Text.literal("Server Address"));
+                Text.translatable("arenaclash.screen.connect.address_field"));
         addressField.setMaxLength(128);
         addressField.setText(ArenaClashClient.lastServerAddress);
-        addressField.setPlaceholder(Text.literal("server address"));
+        addressField.setPlaceholder(Text.translatable("arenaclash.screen.connect.placeholder"));
         addDrawableChild(addressField);
 
         // Connect / Disconnect buttons side by side
         int btnWidth = (contentWidth - 4) / 2;
         int btnY = fieldY + 26;
 
-        connectButton = addDrawableChild(ButtonWidget.builder(Text.literal("Connect"), button -> {
+        connectButton = addDrawableChild(ButtonWidget.builder(Text.translatable("arenaclash.screen.connect.connect"), button -> {
             connect();
         }).dimensions(contentX, btnY, btnWidth, 20).build());
 
-        disconnectButton = addDrawableChild(ButtonWidget.builder(Text.literal("Disconnect"), button -> {
+        disconnectButton = addDrawableChild(ButtonWidget.builder(Text.translatable("arenaclash.screen.connect.disconnect"), button -> {
             ArenaClashClient.disconnectTcp();
             statusType = StatusType.IDLE;
             statusText = "";
@@ -84,7 +84,7 @@ public class ConnectScreen extends Screen {
 
         if (showContinue) {
             continueButton = addDrawableChild(ButtonWidget.builder(
-                    Text.literal("\u00a7a\u25B6 Resume Game"),
+                    Text.translatable("arenaclash.screen.connect.resume"),
                     button -> {
                         String currentPhaseNow = tcpContinue.currentPhase;
                         if ("SURVIVAL".equals(currentPhaseNow)) {
@@ -99,7 +99,7 @@ public class ConnectScreen extends Screen {
 
         // Back button at bottom of panel
         int backY = panelY + panelHeight - 30;
-        backButton = addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+        backButton = addDrawableChild(ButtonWidget.builder(Text.translatable("arenaclash.screen.connect.back"), button -> {
             client.setScreen(parent);
         }).dimensions(width / 2 - 50, backY, 100, 20).build());
 
@@ -109,7 +109,7 @@ public class ConnectScreen extends Screen {
     private void connect() {
         String addr = addressField.getText().trim();
         if (addr.isEmpty()) {
-            statusText = "Enter a server address";
+            statusText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.status.enter_address");
             statusColor = 0xFF5555;
             statusType = StatusType.ERROR;
             return;
@@ -126,7 +126,7 @@ public class ConnectScreen extends Screen {
             try {
                 port = Integer.parseInt(parts[1]);
             } catch (NumberFormatException e) {
-                statusText = "Invalid port number";
+                statusText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.status.invalid_port");
                 statusColor = 0xFF5555;
                 statusType = StatusType.ERROR;
                 return;
@@ -144,17 +144,17 @@ public class ConnectScreen extends Screen {
             }
         }
 
-        statusText = "Connecting...";
+        statusText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.status.connecting");
         statusColor = 0xFFFF55;
         statusType = StatusType.CONNECTING;
 
         boolean success = ArenaClashClient.connectTcp(host, port);
         if (success) {
-            statusText = "Connected \u2014 waiting for players";
+            statusText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.status.connected");
             statusColor = 0x55FF55;
             statusType = StatusType.CONNECTED;
         } else {
-            statusText = "Connection failed";
+            statusText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.status.failed");
             statusColor = 0xFF5555;
             statusType = StatusType.ERROR;
         }
@@ -179,11 +179,14 @@ public class ConnectScreen extends Screen {
         if (tcp != null && tcp.isConnected()) {
             if (!"LOBBY".equals(tcp.currentPhase)) {
                 statusType = StatusType.IN_GAME;
-                statusText = formatPhase(tcp.currentPhase) + " \u2014 Round " + tcp.currentRound;
+                String phaseFmt = formatPhase(tcp.currentPhase);
+                statusText = net.minecraft.client.resource.language.I18n.translate(
+                        "arenaclash.screen.connect.status.in_game", phaseFmt, String.valueOf(tcp.currentRound));
                 statusColor = 0xFFAA00;
             } else {
                 statusType = StatusType.CONNECTED;
-                statusText = tcp.lobbyPlayerCount + "/2 players in lobby";
+                statusText = net.minecraft.client.resource.language.I18n.translate(
+                        "arenaclash.screen.connect.status.lobby", String.valueOf(tcp.lobbyPlayerCount));
                 statusColor = 0x55FF55;
             }
         } else if (statusType == StatusType.CONNECTED || statusType == StatusType.IN_GAME) {
@@ -257,8 +260,9 @@ public class ConnectScreen extends Screen {
         int titleColor = (glowAlpha << 24) | 0xFFAA00;
 
         // Main title
+        String headerText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.header");
         context.drawCenteredTextWithShadow(textRenderer,
-                "\u2694  ARENA CLASH  \u2694", centerX, titleY, titleColor);
+                headerText, centerX, titleY, titleColor);
 
         // Decorative gradient line under title
         int lineY = titleY + 13;
@@ -273,11 +277,13 @@ public class ConnectScreen extends Screen {
                 0x80FFAA00, 0x00FFAA00);
 
         // Subtitle
+        String subtitleText = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.subtitle");
         context.drawCenteredTextWithShadow(textRenderer,
-                "\u00a77Server Connection", centerX, titleY + 18, 0x999999);
+                subtitleText, centerX, titleY + 18, 0x999999);
 
         // Label above address field
-        context.drawTextWithShadow(textRenderer, "\u00a77Address",
+        String addressLabel = net.minecraft.client.resource.language.I18n.translate("arenaclash.screen.connect.address_label");
+        context.drawTextWithShadow(textRenderer, addressLabel,
                 panelX + 20, panelY + 57, 0x888888);
     }
 
@@ -395,11 +401,11 @@ public class ConnectScreen extends Screen {
 
     private static String formatPhase(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> "\u26CF Survival";
-            case "PREPARATION" -> "\u2699 Preparation";
-            case "BATTLE" -> "\u2694 Battle";
-            case "ROUND_END" -> "\u2605 Round End";
-            case "GAME_OVER" -> "\u2655 Game Over";
+            case "SURVIVAL" -> net.minecraft.client.resource.language.I18n.translate("arenaclash.phase.survival");
+            case "PREPARATION" -> net.minecraft.client.resource.language.I18n.translate("arenaclash.phase.preparation");
+            case "BATTLE" -> net.minecraft.client.resource.language.I18n.translate("arenaclash.phase.battle");
+            case "ROUND_END" -> net.minecraft.client.resource.language.I18n.translate("arenaclash.phase.round_end");
+            case "GAME_OVER" -> net.minecraft.client.resource.language.I18n.translate("arenaclash.phase.game_over");
             default -> phase;
         };
     }

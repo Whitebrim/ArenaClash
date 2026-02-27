@@ -99,11 +99,11 @@ public class ArenaManager {
             lane.addDeploymentSlot(TeamSide.PLAYER1, new BlockPos(laneX - 1, y, p1DeployZ + 1));
             lane.addDeploymentSlot(TeamSide.PLAYER1, new BlockPos(laneX, y, p1DeployZ + 1));
 
-            // Deployment slots for P2
-            lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX - 1, y, p2DeployZ));
-            lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX, y, p2DeployZ));
+            // Deployment slots for P2 (Z mirrored: top row = front, bottom row = back)
             lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX - 1, y, p2DeployZ - 1));
             lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX, y, p2DeployZ - 1));
+            lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX - 1, y, p2DeployZ));
+            lane.addDeploymentSlot(TeamSide.PLAYER2, new BlockPos(laneX, y, p2DeployZ));
 
             // Waypoints will be generated after structures are set up
             lanes.put(laneId, lane);
@@ -190,7 +190,8 @@ public class ArenaManager {
     }
 
     /**
-     * Set up build zones (behind throne for each team).
+     * Set up build zones — 13×13×3 area in the right corner behind each player's base,
+     * near the right tower. Players can only place/break blocks within this zone.
      */
     private void setupBuildZones() {
         GameConfig cfg = GameConfig.get();
@@ -201,18 +202,29 @@ public class ArenaManager {
         int sep = cfg.laneSeparation;
         int arenaHalfWidth = sep + cfg.laneWidth + 10;
 
+        int maxX = cx + arenaHalfWidth;
         int p1BaseZ = cz - halfLen - 10;
         int p2BaseZ = cz + halfLen + 10;
 
-        // P1 build zone: behind P1 throne
-        buildZones.put(TeamSide.PLAYER1, new Box(
-                cx - arenaHalfWidth, y, p1BaseZ - 5,
-                cx + arenaHalfWidth, y + 10, p1BaseZ - 1));
+        // Build zone dimensions
+        int zoneSize = 13;   // X and Z dimension
+        int zoneHeight = 3;  // Y dimension
 
-        // P2 build zone: behind P2 throne
+        // P1 build zone: right corner behind base (maxX side, behind throne toward minZ)
+        int p1MinZ = p1BaseZ - 5;
+        int p1MinX = maxX - zoneSize + 1;
+        // Box.contains uses exclusive upper bound, so add 1 to max values
+        buildZones.put(TeamSide.PLAYER1, new Box(
+                p1MinX, y, p1MinZ,
+                p1MinX + zoneSize, y + zoneHeight, p1MinZ + zoneSize));
+
+        // P2 build zone: right corner behind base (maxX side, behind throne toward maxZ)
+        int p2MaxZ = p2BaseZ + 5;
+        int p2MinX = maxX - zoneSize + 1;
+        int p2MinZ = p2MaxZ - zoneSize + 1;
         buildZones.put(TeamSide.PLAYER2, new Box(
-                cx - arenaHalfWidth, y, p2BaseZ + 1,
-                cx + arenaHalfWidth, y + 10, p2BaseZ + 5));
+                p2MinX, y, p2MinZ,
+                p2MinX + zoneSize, y + zoneHeight, p2MinZ + zoneSize));
     }
 
     /**

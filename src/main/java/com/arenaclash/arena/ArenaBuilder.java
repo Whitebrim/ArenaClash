@@ -30,6 +30,7 @@ public class ArenaBuilder {
     private static final BlockState GLASS_DIVIDER = Blocks.TINTED_GLASS.getDefaultState();
     private static final BlockState SIDE_FLOOR_P1 = Blocks.BLUE_CONCRETE.getDefaultState();
     private static final BlockState SIDE_FLOOR_P2 = Blocks.RED_CONCRETE.getDefaultState();
+    private static final BlockState BUILD_ZONE_FLOOR = Blocks.STRIPPED_BAMBOO_BLOCK.getDefaultState();
     private static final BlockState BEACON_LIGHT = Blocks.SEA_LANTERN.getDefaultState();
     private static final BlockState BELL_BLOCK = Blocks.BELL.getDefaultState();
     private static final BlockState BELL_PEDESTAL = Blocks.POLISHED_BLACKSTONE.getDefaultState();
@@ -103,6 +104,17 @@ public class ArenaBuilder {
         fillBlock(world, SIDE_FLOOR_P1, minX, y - 1, minZ, maxX, y - 1, p1DeployZ - 3);
         fillBlock(world, SIDE_FLOOR_P2, minX, y - 1, p2DeployZ + 3, maxX, y - 1, maxZ);
 
+        // Build zone floor markers (stripped bamboo) — 13×13 area in the right corner
+        int bzSize = 13;
+        int bzMinX = maxX - bzSize + 1;
+        // P1 build zone
+        int p1BzMinZ = p1BaseZ - 5;
+        fillBlock(world, BUILD_ZONE_FLOOR, bzMinX, y - 1, p1BzMinZ, bzMinX + bzSize - 1, y - 1, p1BzMinZ + bzSize - 1);
+
+        // P2 build zone
+        int p2BzMaxZ = p2BaseZ + 5;
+        fillBlock(world, BUILD_ZONE_FLOOR, bzMinX, y - 1, p2BzMaxZ - bzSize + 1, bzMinX + bzSize - 1, y - 1, p2BzMaxZ);
+
         // Thrones
         buildThrone(world, cx, y, p1BaseZ, TeamSide.PLAYER1);
         buildThrone(world, cx, y, p2BaseZ, TeamSide.PLAYER2);
@@ -117,14 +129,14 @@ public class ArenaBuilder {
         buildBellPedestal(world, cx + 3, y, p1BaseZ);
         buildBellPedestal(world, cx + 3, y, p2BaseZ);
 
-        // Lighting
+        // Lighting (embedded in walls)
         for (int z = minZ; z <= maxZ; z += 6) {
-            world.setBlockState(new BlockPos(minX, y + 2, z), BEACON_LIGHT);
-            world.setBlockState(new BlockPos(maxX, y + 2, z), BEACON_LIGHT);
+            world.setBlockState(new BlockPos(minX - 1, y + 2, z), BEACON_LIGHT);
+            world.setBlockState(new BlockPos(maxX + 1, y + 2, z), BEACON_LIGHT);
         }
         for (int x = minX; x <= maxX; x += 6) {
-            world.setBlockState(new BlockPos(x, y + 2, minZ), BEACON_LIGHT);
-            world.setBlockState(new BlockPos(x, y + 2, maxZ), BEACON_LIGHT);
+            world.setBlockState(new BlockPos(x, y + 2, minZ - 1), BEACON_LIGHT);
+            world.setBlockState(new BlockPos(x, y + 2, maxZ + 1), BEACON_LIGHT);
         }
 
         // Invisible ceiling barrier

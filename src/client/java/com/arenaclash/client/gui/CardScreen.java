@@ -7,6 +7,7 @@ import com.arenaclash.card.MobCardRegistry;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.resource.language.I18n;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 
@@ -24,7 +25,7 @@ public class CardScreen extends Screen {
     private static final int CARDS_PER_PAGE = 6;
 
     public CardScreen(NbtCompound inventoryData) {
-        super(Text.literal("Card Inventory"));
+        super(Text.translatable("arenaclash.screen.cards.title", "0"));
         this.inventory = CardInventory.fromNbt(inventoryData);
     }
 
@@ -49,7 +50,7 @@ public class CardScreen extends Screen {
 
         // Title
         context.drawCenteredTextWithShadow(textRenderer,
-                "§6§l Card Inventory (" + inventory.getCardCount() + " cards)",
+                I18n.translate("arenaclash.screen.cards.title", String.valueOf(inventory.getCardCount())),
                 width / 2, 20, 0xFFFFFF);
 
         // Draw cards
@@ -72,7 +73,7 @@ public class CardScreen extends Screen {
             context.drawBorder(startX - 2, y - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4, borderColor);
 
             // Mob name + level
-            String name = "§f" + def.displayName() + " §eLv." + card.getLevel();
+            String name = "§f" + I18n.translate(def.translationKey()) + " " + I18n.translate("arenaclash.screen.cards.lv", String.valueOf(card.getLevel()));
             context.drawTextWithShadow(textRenderer, name, startX + 4, y + 2, 0xFFFFFF);
 
             // Stats
@@ -81,7 +82,7 @@ public class CardScreen extends Screen {
             context.drawTextWithShadow(textRenderer, stats, startX + 4, y + 14, 0xAAAAAA);
 
             // Category
-            String category = "§7[" + def.category().name() + "]";
+            String category = "§7[" + I18n.translate(def.categoryTranslationKey()) + "]";
             context.drawTextWithShadow(textRenderer, category, startX + 4, y + 26, 0x888888);
 
             // Equipment info
@@ -103,7 +104,7 @@ public class CardScreen extends Screen {
 
         // Instructions
         context.drawCenteredTextWithShadow(textRenderer,
-                "§7Press ESC to close | Scroll with buttons or mouse wheel",
+                I18n.translate("arenaclash.screen.cards.hint"),
                 width / 2, height - 20, 0x888888);
 
         super.render(context, mouseX, mouseY, delta);

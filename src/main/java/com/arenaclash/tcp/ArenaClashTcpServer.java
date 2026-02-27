@@ -6,6 +6,7 @@ import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.game.TeamSide;
 import com.google.gson.JsonObject;
+import net.minecraft.text.Text;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -170,8 +171,8 @@ public class ArenaClashTcpServer {
                     net.minecraft.server.MinecraftServer server = GameManager.getInstance().getServer();
                     if (server != null) {
                         server.execute(() -> {
-                            String result = GameManager.getInstance().startGame();
-                            ArenaClash.LOGGER.info("[ArenaClash TCP] Auto-start result: {}", result);
+                            Text result = GameManager.getInstance().startGame();
+                            ArenaClash.LOGGER.info("[ArenaClash TCP] Auto-start result: {}", result.getString());
                         });
                     }
                 }
@@ -222,8 +223,8 @@ public class ArenaClashTcpServer {
             }
             case SyncProtocol.C2S_READY -> {
                 session.setReady(true);
-                broadcast(SyncProtocol.serverMessage(
-                        "§e" + session.getPlayerName() + " is ready!"));
+                broadcast(SyncProtocol.translatableMessage(
+                        "arenaclash.tcp.player_ready", session.getPlayerName()));
                 gm.onTcpReady(session);
             }
             case SyncProtocol.C2S_PLACE_CARD -> {
@@ -263,11 +264,11 @@ public class ArenaClashTcpServer {
                                 // Send command output back to the player
                                 // (The command itself should send messages via TCP broadcast)
                             } catch (Exception e) {
-                                session.send(SyncProtocol.serverMessage("§cCommand error: " + e.getMessage()));
+                                session.send(SyncProtocol.translatableMessage("arenaclash.tcp.command_error", e.getMessage()));
                             }
                         });
                     } else {
-                        session.send(SyncProtocol.serverMessage("§cServer not available for commands"));
+                        session.send(SyncProtocol.translatableMessage("arenaclash.tcp.server_unavailable"));
                     }
                     return;
                 }

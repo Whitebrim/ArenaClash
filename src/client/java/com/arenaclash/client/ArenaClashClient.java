@@ -119,7 +119,7 @@ public class ArenaClashClient implements ClientModInitializer {
                                     tcp.sendChat("/ac " + args);
                                     return 1;
                                 }
-                                ctx.getSource().sendFeedback(Text.literal("§cNot connected to ArenaClash server!"));
+                                ctx.getSource().sendFeedback(Text.translatable("arenaclash.msg.not_connected"));
                                 return 0;
                             }))
                     .executes(ctx -> {
@@ -128,7 +128,7 @@ public class ArenaClashClient implements ClientModInitializer {
                             tcp.sendChat("/ac");
                             return 1;
                         }
-                        ctx.getSource().sendFeedback(Text.literal("§cNot connected to ArenaClash server!"));
+                        ctx.getSource().sendFeedback(Text.translatable("arenaclash.msg.not_connected"));
                         return 0;
                     }));
         });
@@ -509,7 +509,7 @@ public class ArenaClashClient implements ClientModInitializer {
     public static void onChatRelayFromTcp(String sender, String message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("\u00a77[" + sender + "] \u00a7f" + message));
+            client.player.sendMessage(Text.translatable("arenaclash.msg.chat_format", sender, message));
         }
     }
 
@@ -601,8 +601,10 @@ public class ArenaClashClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.CardObtained.ID,
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
+                        // Use mob translation key for localized name
+                        String translatedName = net.minecraft.client.resource.language.I18n.translate("arenaclash.mob." + payload.mobId());
                         context.client().player.sendMessage(
-                                Text.literal("\u00a76\u00a7l\u2605 " + payload.displayName() + " Card! \u2605"));
+                                Text.translatable("arenaclash.msg.card_obtained_star", translatedName));
                     }
                 }));
 
@@ -618,8 +620,8 @@ public class ArenaClashClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.BattleResultNotify.ID,
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
-                        context.client().player.sendMessage(Text.literal(
-                                "\u00a76=== " + payload.resultType() + " - Winner: " + payload.winner() + " ==="));
+                        context.client().player.sendMessage(Text.translatable(
+                                "arenaclash.msg.battle_result", payload.resultType(), payload.winner()));
                     }
                 }));
     }

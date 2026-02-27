@@ -14,6 +14,7 @@ import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -271,8 +272,9 @@ public class ArenaStructure {
             bar.append(i < filled ? hpColor + "\u258B" : "\u00A78\u258B");
         }
 
-        String typeName = type == StructureType.THRONE ? "THRONE" : "TOWER";
-        entity.setCustomName(Text.literal(teamColor + label + " " + typeName + " " + bar + " " + hpColor + hp + "\u00A77/" + max));
+        Text typeName = Text.translatable(type == StructureType.THRONE ? "arenaclash.structure.throne" : "arenaclash.structure.tower");
+        MutableText displayName = Text.literal(teamColor + label + " ").append(typeName).append(Text.literal(" " + bar + " " + hpColor + hp + "\u00A77/" + max));
+        entity.setCustomName(displayName);
         entity.setCustomNameVisible(true);
     }
 

@@ -14,6 +14,7 @@ import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -34,8 +35,8 @@ public class GameCommands {
             // /ac start — start game with 2 TCP-connected players
             root.then(literal("start")
                     .executes(ctx -> {
-                        String result = GameManager.getInstance().startGame();
-                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        Text result = GameManager.getInstance().startGame();
+                        ctx.getSource().sendFeedback(() -> result, true);
                         return 1;
                     })
                     // /ac start <player1> <player2>
@@ -44,16 +45,16 @@ public class GameCommands {
                                     .executes(ctx -> {
                                         ServerPlayerEntity p1 = EntityArgumentType.getPlayer(ctx, "player1");
                                         ServerPlayerEntity p2 = EntityArgumentType.getPlayer(ctx, "player2");
-                                        String result = GameManager.getInstance().startGame(p1, p2);
-                                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                                        Text result = GameManager.getInstance().startGame(p1, p2);
+                                        ctx.getSource().sendFeedback(() -> result, true);
                                         return 1;
                                     }))));
 
             // /ac reset
             root.then(literal("reset")
                     .executes(ctx -> {
-                        String result = GameManager.getInstance().resetGame();
-                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        Text result = GameManager.getInstance().resetGame();
+                        ctx.getSource().sendFeedback(() -> result, true);
                         return 1;
                     }));
 
@@ -61,14 +62,13 @@ public class GameCommands {
             root.then(literal("status")
                     .executes(ctx -> {
                         GameManager gm = GameManager.getInstance();
-                        ctx.getSource().sendFeedback(() -> Text.literal(
-                                "§6=== Arena Clash Status ===\n" +
-                                "§eActive: " + gm.isGameActive() + "\n" +
-                                "§ePhase: " + gm.getPhase() + "\n" +
-                                "§eRound: " + gm.getCurrentRound() + "\n" +
-                                "§eTimer: " + (gm.getPhaseTicksRemaining() / 20) + "s\n" +
-                                "§ePaused: " + gm.isGamePaused()
-                        ), false);
+                        MutableText status = Text.translatable("arenaclash.cmd.status.title").append("\n")
+                                .append(Text.translatable("arenaclash.cmd.status.active", String.valueOf(gm.isGameActive()))).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.status.phase", String.valueOf(gm.getPhase()))).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.status.round", String.valueOf(gm.getCurrentRound()))).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.status.timer", String.valueOf(gm.getPhaseTicksRemaining() / 20))).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.status.paused", String.valueOf(gm.isGamePaused())));
+                        ctx.getSource().sendFeedback(() -> status, false);
                         return 1;
                     }));
 
@@ -79,23 +79,23 @@ public class GameCommands {
                         if (player == null) return 0;
                         PlayerGameData data = GameManager.getInstance().getPlayerData(player.getUuid());
                         if (data == null) {
-                            ctx.getSource().sendFeedback(() -> Text.literal("§cYou're not in a game!"), false);
+                            ctx.getSource().sendFeedback(() -> Text.translatable("arenaclash.cmd.not_in_game"), false);
                             return 0;
                         }
                         CardInventory inv = data.getCardInventory();
-                        StringBuilder sb = new StringBuilder("§6=== Your Cards (" + inv.getCardCount() + ") ===\n");
+                        MutableText msg = Text.translatable("arenaclash.cmd.cards.title", String.valueOf(inv.getCardCount()));
                         for (MobCard card : inv.getAllCards()) {
                             var def = card.getDefinition();
                             if (def != null) {
-                                sb.append("§e- ").append(def.displayName())
-                                        .append(" Lv.").append(card.getLevel())
-                                        .append(" §7(HP:").append(String.format("%.0f", card.getHP()))
-                                        .append(" ATK:").append(String.format("%.0f", card.getAttack()))
-                                        .append(" SPD:").append(String.format("%.1f", card.getSpeed()))
-                                        .append(")\n");
+                                msg.append("\n").append(Text.translatable("arenaclash.cmd.cards.entry",
+                                        Text.translatable(def.translationKey()),
+                                        String.valueOf(card.getLevel()),
+                                        String.format("%.0f", card.getHP()),
+                                        String.format("%.0f", card.getAttack()),
+                                        String.format("%.1f", card.getSpeed())));
                             }
                         }
-                        ctx.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        ctx.getSource().sendFeedback(() -> msg, false);
                         return 1;
                     }));
 
@@ -108,7 +108,7 @@ public class GameCommands {
                                         GameConfig.get().dayDurationTicks = val;
                                         GameConfig.save();
                                         ctx.getSource().sendFeedback(() ->
-                                                Text.literal("§aDay duration set to " + val + " ticks"), true);
+                                                Text.translatable("arenaclash.cmd.day_duration_set", String.valueOf(val)), true);
                                         return 1;
                                     })))
                     .then(literal("prepTime")
@@ -118,7 +118,7 @@ public class GameCommands {
                                         GameConfig.get().preparationTimeTicks = val;
                                         GameConfig.save();
                                         ctx.getSource().sendFeedback(() ->
-                                                Text.literal("§aPrep time set to " + val + " ticks"), true);
+                                                Text.translatable("arenaclash.cmd.prep_time_set", String.valueOf(val)), true);
                                         return 1;
                                     })))
                     .then(literal("seed")
@@ -128,23 +128,26 @@ public class GameCommands {
                                         GameConfig.get().gameSeed = val;
                                         GameConfig.save();
                                         ctx.getSource().sendFeedback(() ->
-                                                Text.literal("§aSeed set to " + val), true);
+                                                Text.translatable("arenaclash.cmd.seed_set", String.valueOf(val)), true);
                                         return 1;
                                     })))
                     .then(literal("show")
                             .executes(ctx -> {
                                 GameConfig cfg = GameConfig.get();
-                                ctx.getSource().sendFeedback(() -> Text.literal(
-                                        "§6=== Config ===\n" +
-                                        "§eDayDuration: " + cfg.dayDurationTicks + " ticks\n" +
-                                        "§ePrepTime: " + cfg.preparationTimeTicks + " ticks\n" +
-                                        "§eRounds: " + cfg.maxRounds + "\n" +
-                                        "§eSurvival days: " + cfg.round1Days + "/" + cfg.round2Days + "/" + cfg.round3Days + "\n" +
-                                        "§eSeed: " + (cfg.gameSeed == 0 ? "§7random (0)" : String.valueOf(cfg.gameSeed)) + "\n" +
-                                        "§eLaneLength: " + cfg.arenaLaneLength + "\n" +
-                                        "§eThroneHP: " + cfg.throneHP + "\n" +
-                                        "§eTowerHP: " + cfg.towerHP
-                                ), false);
+                                Text seedDisplay = cfg.gameSeed == 0
+                                        ? Text.translatable("arenaclash.cmd.config.seed_random")
+                                        : Text.literal(String.valueOf(cfg.gameSeed));
+                                MutableText msg = Text.translatable("arenaclash.cmd.config.title").append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.day_duration", String.valueOf(cfg.dayDurationTicks))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.prep_time", String.valueOf(cfg.preparationTimeTicks))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.rounds", String.valueOf(cfg.maxRounds))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.survival_days",
+                                                String.valueOf(cfg.round1Days), String.valueOf(cfg.round2Days), String.valueOf(cfg.round3Days))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.seed", seedDisplay)).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.lane_length", String.valueOf(cfg.arenaLaneLength))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.throne_hp", String.valueOf(cfg.throneHP))).append("\n")
+                                        .append(Text.translatable("arenaclash.cmd.config.tower_hp", String.valueOf(cfg.towerHP)));
+                                ctx.getSource().sendFeedback(() -> msg, false);
                                 return 1;
                             })));
 
@@ -174,24 +177,24 @@ public class GameCommands {
             // /ac pause — pause the game timer
             root.then(literal("pause")
                     .executes(ctx -> {
-                        String result = GameManager.getInstance().pauseGame();
-                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        Text result = GameManager.getInstance().pauseGame();
+                        ctx.getSource().sendFeedback(() -> result, true);
                         return 1;
                     }));
 
             // /ac continue — resume the game timer
             root.then(literal("continue")
                     .executes(ctx -> {
-                        String result = GameManager.getInstance().continueGame();
-                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        Text result = GameManager.getInstance().continueGame();
+                        ctx.getSource().sendFeedback(() -> result, true);
                         return 1;
                     }));
 
             // /ac skip — skip current phase
             root.then(literal("skip")
                     .executes(ctx -> {
-                        String result = GameManager.getInstance().skipPhase();
-                        ctx.getSource().sendFeedback(() -> Text.literal(result), true);
+                        Text result = GameManager.getInstance().skipPhase();
+                        ctx.getSource().sendFeedback(() -> result, true);
                         return 1;
                     }));
 
@@ -199,16 +202,16 @@ public class GameCommands {
             root.then(literal("reload")
                     .executes(ctx -> {
                         GameConfig.load();
-                        ctx.getSource().sendFeedback(() -> Text.literal("§aArenaClash config reloaded from disk!"), true);
-                        // Show key values
+                        ctx.getSource().sendFeedback(() -> Text.translatable("arenaclash.cmd.config_reloaded"), true);
                         GameConfig cfg = GameConfig.get();
-                        ctx.getSource().sendFeedback(() -> Text.literal(
-                                "§7  dayDuration=" + cfg.dayDurationTicks +
-                                " prepTime=" + cfg.preparationTimeTicks +
-                                " rounds=" + cfg.maxRounds +
-                                " seed=" + (cfg.gameSeed == 0 ? "random" : cfg.gameSeed) +
-                                " throneHP=" + cfg.throneHP +
-                                " towerHP=" + cfg.towerHP
+                        String seedVal = cfg.gameSeed == 0 ? "random" : String.valueOf(cfg.gameSeed);
+                        ctx.getSource().sendFeedback(() -> Text.translatable("arenaclash.cmd.config.reload_details",
+                                String.valueOf(cfg.dayDurationTicks),
+                                String.valueOf(cfg.preparationTimeTicks),
+                                String.valueOf(cfg.maxRounds),
+                                seedVal,
+                                String.valueOf(cfg.throneHP),
+                                String.valueOf(cfg.towerHP)
                         ), false);
                         return 1;
                     }));
@@ -216,33 +219,30 @@ public class GameCommands {
             // /ac help - list all commands
             root.then(literal("help")
                     .executes(ctx -> {
-                        ctx.getSource().sendFeedback(() -> Text.literal(
-                                "§6§l=== Arena Clash Commands ===\n" +
-                                "§e/ac start §7- Start game (needs 2 TCP players)\n" +
-                                "§e/ac start <p1> <p2> §7- Start with specific players\n" +
-                                "§e/ac reset §7- Reset the current game\n" +
-                                "§e/ac pause §7- Pause the game timer\n" +
-                                "§e/ac continue §7- Resume the game timer\n" +
-                                "§e/ac skip §7- Skip current phase\n" +
-                                "§e/ac reload §7- Reload config from disk\n" +
-                                "§e/ac status §7- Show game state\n" +
-                                "§e/ac cards §7- Show your card inventory\n" +
-                                "§e/ac bell §7- Ring bell (ready/retreat)\n" +
-                                "§e/ac givecard <player> <mobId> [count] §7- Give cards\n" +
-                                "§e/ac config show §7- Show all config values\n" +
-                                "§e/ac config dayDuration <ticks> §7- Set day length\n" +
-                                "§e/ac config prepTime <ticks> §7- Set prep duration\n" +
-                                "§e/ac config seed <seed> §7- Set world seed (0=random)\n" +
-                                "§e/ac help §7- This message"
-                        ), false);
+                        MutableText help = Text.translatable("arenaclash.cmd.help.title").append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.start")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.start_players")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.reset")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.pause")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.continue")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.skip")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.reload")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.status")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.cards")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.bell")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.givecard")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.config_show")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.config_day")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.config_prep")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.config_seed")).append("\n")
+                                .append(Text.translatable("arenaclash.cmd.help.help"));
+                        ctx.getSource().sendFeedback(() -> help, false);
                         return 1;
                     }));
 
             // Also show help when running bare /ac
             root.executes(ctx -> {
-                ctx.getSource().sendFeedback(() -> Text.literal(
-                        "§6Arena Clash §7- Use §e/ac help §7for command list"
-                ), false);
+                ctx.getSource().sendFeedback(() -> Text.translatable("arenaclash.cmd.ac_hint"), false);
                 return 1;
             });
 
@@ -253,12 +253,12 @@ public class GameCommands {
     private static int giveCard(ServerCommandSource source, ServerPlayerEntity player, String mobId, int count) {
         PlayerGameData data = GameManager.getInstance().getPlayerData(player.getUuid());
         if (data == null) {
-            source.sendFeedback(() -> Text.literal("§cPlayer not in game!"), false);
+            source.sendFeedback(() -> Text.translatable("arenaclash.cmd.player_not_in_game"), false);
             return 0;
         }
         var def = com.arenaclash.card.MobCardRegistry.getById(mobId);
         if (def == null) {
-            source.sendFeedback(() -> Text.literal("§cUnknown mob ID: " + mobId), false);
+            source.sendFeedback(() -> Text.translatable("arenaclash.cmd.unknown_mob", mobId), false);
             return 0;
         }
         for (int i = 0; i < count; i++) {
@@ -266,7 +266,8 @@ public class GameCommands {
         }
         // Sync cards to client so GUI updates immediately
         GameManager.getInstance().syncCards(player);
-        source.sendFeedback(() -> Text.literal("§aGave " + count + "x " + def.displayName() + " to " + player.getName().getString()), true);
+        source.sendFeedback(() -> Text.translatable("arenaclash.cmd.gave_card",
+                String.valueOf(count), Text.translatable(def.translationKey()), player.getName().getString()), true);
         return 1;
     }
 }

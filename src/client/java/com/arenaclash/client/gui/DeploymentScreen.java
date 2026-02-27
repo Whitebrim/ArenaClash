@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.resource.language.I18n;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 
@@ -37,14 +38,18 @@ public class DeploymentScreen extends Screen {
 
     // Lane names
     private static final String[] LANE_NAMES = {"LEFT", "CENTER", "RIGHT"};
-    private static final String[] LANE_DISPLAY = {"Left Lane", "Center Lane", "Right Lane"};
+    private static final String[] LANE_DISPLAY_KEYS = {
+            "arenaclash.screen.deploy.lane.left",
+            "arenaclash.screen.deploy.lane.center",
+            "arenaclash.screen.deploy.lane.right"
+    };
 
     // Slot states from server
     private final String[][] slotCards = new String[3][4]; // [lane][slot] = mob display name or null
     private final boolean[][] slotOccupied = new boolean[3][4];
 
     public DeploymentScreen(NbtCompound inventoryData, NbtCompound slotData) {
-        super(Text.literal("Deploy Your Forces"));
+        super(Text.translatable("arenaclash.screen.deploy.title"));
         this.inventory = CardInventory.fromNbt(inventoryData);
         this.slotData = slotData;
         parseSlotData();
@@ -65,7 +70,7 @@ public class DeploymentScreen extends Screen {
                     NbtCompound cardNbt = slotNbt.getCompound("card");
                     String mobId = cardNbt.getString("mobId");
                     var def = com.arenaclash.card.MobCardRegistry.getById(mobId);
-                    slotCards[l][s] = def != null ? def.displayName() : mobId;
+                    slotCards[l][s] = def != null ? I18n.translate(def.translationKey()) : mobId;
                 }
             }
         }
@@ -95,16 +100,16 @@ public class DeploymentScreen extends Screen {
         ctx.fill(0, 0, width, height, 0xC0101010);
 
         // Title
-        ctx.drawCenteredTextWithShadow(textRenderer, "§6§lDeploy Your Forces", width / 2, 10, 0xFFFFFF);
+        ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.title"), width / 2, 10, 0xFFFFFF);
         ctx.drawCenteredTextWithShadow(textRenderer,
-                "§7Click a card, then click a slot to place it. Right-click slot to remove.",
+                I18n.translate("arenaclash.screen.deploy.hint"),
                 width / 2, 25, 0x888888);
 
         // === Left: Card List ===
         int listX = 20;
         int listY = 50;
         ctx.fill(listX - 2, listY - 2, listX + CARD_LIST_WIDTH + 2, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT + 2, 0x80000000);
-        ctx.drawTextWithShadow(textRenderer, "§eCards (" + inventory.getCardCount() + ")", listX, listY - 14, 0xFFFF00);
+        ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.cards_count", String.valueOf(inventory.getCardCount())), listX, listY - 14, 0xFFFF00);
 
         List<MobCard> cards = inventory.getAllCards();
         for (int i = cardScrollOffset; i < Math.min(cardScrollOffset + CARDS_VISIBLE, cards.size()); i++) {
@@ -121,7 +126,7 @@ public class DeploymentScreen extends Screen {
             ctx.fill(listX, y, listX + CARD_LIST_WIDTH, y + CARD_ENTRY_HEIGHT - 1, bgColor);
 
             // Name
-            ctx.drawTextWithShadow(textRenderer, def.displayName() + " Lv." + card.getLevel(), listX + 4, y + 2, 0xFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, I18n.translate(def.translationKey()) + " " + I18n.translate("arenaclash.screen.deploy.lv", String.valueOf(card.getLevel())), listX + 4, y + 2, 0xFFFFFF);
             // Stats line
             String stats = String.format("♥%.0f ⚔%.0f ⚡%.1f", card.getHP(), card.getAttack(), card.getSpeed());
             ctx.drawTextWithShadow(textRenderer, stats, listX + 4, y + 14, 0xAAAAAA);
@@ -135,7 +140,7 @@ public class DeploymentScreen extends Screen {
             int laneX = slotsStartX + l * (SLOT_SIZE * 2 + LANE_GAP);
 
             // Lane title
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b" + LANE_DISPLAY[l],
+            ctx.drawCenteredTextWithShadow(textRenderer, "§b" + I18n.translate(LANE_DISPLAY_KEYS[l]),
                     laneX + SLOT_SIZE, slotsStartY - 14, 0x55FFFF);
 
             // 2x2 grid
@@ -159,7 +164,7 @@ public class DeploymentScreen extends Screen {
                     if (name.length() > 8) name = name.substring(0, 7) + "…";
                     ctx.drawCenteredTextWithShadow(textRenderer, name, sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x44FF44);
                 } else {
-                    ctx.drawCenteredTextWithShadow(textRenderer, "§8Empty", sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x444444);
+                    ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.empty"), sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x444444);
                 }
             }
         }
@@ -167,13 +172,13 @@ public class DeploymentScreen extends Screen {
         // Selected card indicator
         if (selectedCard != null) {
             MobCardDefinition def = selectedCard.getDefinition();
-            String name = def != null ? def.displayName() : "???";
-            ctx.drawTextWithShadow(textRenderer, "§aSelected: §f" + name, slotsStartX, slotsStartY + SLOT_SIZE * 2 + 10, 0x44FF44);
+            String name = def != null ? I18n.translate(def.translationKey()) : "???";
+            ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.selected", name), slotsStartX, slotsStartY + SLOT_SIZE * 2 + 10, 0x44FF44);
         }
 
         // Keybind hints
         ctx.drawCenteredTextWithShadow(textRenderer,
-                "§7[B] Ring Bell (Ready) | [ESC] Close",
+                I18n.translate("arenaclash.screen.deploy.keybinds"),
                 width / 2, height - 15, 0x888888);
 
         super.render(ctx, mouseX, mouseY, delta);
@@ -216,7 +221,7 @@ public class DeploymentScreen extends Screen {
                         // Optimistic UI update
                         slotOccupied[l][s] = true;
                         var def = selectedCard.getDefinition();
-                        slotCards[l][s] = def != null ? def.displayName() : "Mob";
+                        slotCards[l][s] = def != null ? I18n.translate(def.translationKey()) : "Mob";
                         inventory.removeCard(selectedCard.getCardId());
                         selectedCard = null;
                         return true;

@@ -128,10 +128,10 @@ public class GameEventHandlers {
                 if (!player.getServer().isDedicated()) {
                     if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
-                    player.sendMessage(Text.literal("§a+ " + def.displayName() + " card obtained!"));
+                    player.sendMessage(Text.translatable("arenaclash.msg.card_obtained", Text.translatable(def.translationKey())));
                     if (bonusCard) {
                         com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
-                        player.sendMessage(Text.literal("§6✦ Looting bonus! Extra " + def.displayName() + " card!"));
+                        player.sendMessage(Text.translatable("arenaclash.msg.looting_bonus", Text.translatable(def.translationKey())));
                     }
                 } else {
                     GameManager gm = GameManager.getInstance();
@@ -139,7 +139,7 @@ public class GameEventHandlers {
                         gm.onMobKilled(player, entity.getType());
                         if (bonusCard) {
                             gm.onMobKilled(player, entity.getType());
-                            player.sendMessage(Text.literal("§6✦ Looting bonus! Extra " + def.displayName() + " card!"));
+                            player.sendMessage(Text.translatable("arenaclash.msg.looting_bonus", Text.translatable(def.translationKey())));
                         }
                     }
                 }
@@ -172,7 +172,7 @@ public class GameEventHandlers {
             if (entity.getCommandTags().contains("arenaclash_mob")
                     || entity.getCommandTags().contains("arenaclash_structure")
                     || entity.getCommandTags().contains("arenaclash_marker")) {
-                serverPlayer.sendMessage(Text.literal("§cArena entities cannot be attacked!"), true);
+                serverPlayer.sendMessage(Text.translatable("arenaclash.msg.arena_no_attack"), true);
                 return ActionResult.FAIL;
             }
 
@@ -181,7 +181,7 @@ public class GameEventHandlers {
             if (gm.isGameActive()) {
                 ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
                 if (world == arenaWorld && entity instanceof ServerPlayerEntity) {
-                    serverPlayer.sendMessage(Text.literal("§cPvP is not allowed in the arena!"), true);
+                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.no_pvp"), true);
                     return ActionResult.FAIL;
                 }
             }
@@ -218,7 +218,7 @@ public class GameEventHandlers {
             if (world.getBlockState(clickedPos).isOf(Blocks.BELL)) {
                 PlayerGameData data = gm.getPlayerData(serverPlayer.getUuid());
                 if (data == null) {
-                    serverPlayer.sendMessage(Text.literal("§cYou are not part of this game!"), true);
+                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_in_game"), true);
                     return ActionResult.FAIL;
                 }
 
@@ -234,7 +234,7 @@ public class GameEventHandlers {
 
                     return ActionResult.SUCCESS;
                 } else if (bellTeam != null) {
-                    serverPlayer.sendMessage(Text.literal("§cThis is not your bell!"), true);
+                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_your_bell"), true);
                     return ActionResult.FAIL;
                 }
             }
@@ -264,7 +264,7 @@ public class GameEventHandlers {
 
         // Non-game players (including operators) cannot modify the arena AT ALL
         if (data == null) {
-            player.sendMessage(Text.literal("§cYou are not part of this game!"), true);
+            player.sendMessage(Text.translatable("arenaclash.msg.not_in_game"), true);
             return false;
         }
 
@@ -272,7 +272,7 @@ public class GameEventHandlers {
 
         // During battle: no building for anyone
         if (phase == GamePhase.BATTLE || phase == GamePhase.ROUND_END || phase == GamePhase.GAME_OVER) {
-            player.sendMessage(Text.literal("§cYou cannot modify the arena during battle!"), true);
+            player.sendMessage(Text.translatable("arenaclash.msg.no_modify_battle"), true);
             return false;
         }
 
@@ -288,21 +288,15 @@ public class GameEventHandlers {
             // Check build zone
             if (cfg.buildZonesEnabled) {
                 if (!gm.getArenaManager().isInBuildZone(data.getTeam(), pos)) {
-                    int cz = cfg.arenaCenterZ;
-                    if (data.getTeam() == TeamSide.PLAYER1 && pos.getZ() >= cz) {
-                        player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
-                        return false;
-                    } else if (data.getTeam() == TeamSide.PLAYER2 && pos.getZ() <= cz) {
-                        player.sendMessage(Text.literal("§cYou can only build on your side!"), true);
-                        return false;
-                    }
+                    player.sendMessage(Text.translatable("arenaclash.msg.build_zone_only"), true);
+                    return false;
                 }
             }
 
             // Don't allow breaking structure blocks
             for (var structure : gm.getArenaManager().getStructures()) {
                 if (structure.getBoundingBox().contains(pos.getX(), pos.getY(), pos.getZ())) {
-                    player.sendMessage(Text.literal("§cYou cannot modify arena structures!"), true);
+                    player.sendMessage(Text.translatable("arenaclash.msg.no_modify_structures"), true);
                     return false;
                 }
             }
@@ -363,7 +357,7 @@ public class GameEventHandlers {
                                     com.arenaclash.arena.Lane.LaneId.valueOf(payload.laneId());
                             GameManager.getInstance().handlePlaceCard(player, cardId, laneId, payload.slotIndex());
                         } catch (Exception e) {
-                            player.sendMessage(Text.literal("§cInvalid request"));
+                            player.sendMessage(Text.translatable("arenaclash.msg.invalid_request"));
                         }
                     });
                 });
@@ -377,7 +371,7 @@ public class GameEventHandlers {
                                     com.arenaclash.arena.Lane.LaneId.valueOf(payload.laneId());
                             GameManager.getInstance().handleRemoveCard(player, laneId, payload.slotIndex());
                         } catch (Exception e) {
-                            player.sendMessage(Text.literal("§cInvalid request"));
+                            player.sendMessage(Text.translatable("arenaclash.msg.invalid_request"));
                         }
                     });
                 });
