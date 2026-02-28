@@ -2,6 +2,7 @@ package com.arenaclash.arena;
 
 import com.arenaclash.card.MobCard;
 import com.arenaclash.card.MobCardDefinition;
+import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
 import net.minecraft.entity.Entity;
@@ -32,6 +33,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Arena mob with full special abilities, HP bars, flying, environmental damage, splash melee, collision.
@@ -110,6 +112,15 @@ public class ArenaMob {
     public boolean isSubMob() { return isSubMob; }
     public void setSubMob(boolean sub) { this.isSubMob = sub; }
     public List<ArenaMob> getPendingChildMobs() { return pendingChildMobs; }
+
+    /**
+     * Returns the attack cooldown with ±10% random variance applied.
+     * This prevents deterministic outcomes when two identical mobs fight.
+     */
+    private int getRandomizedCooldown() {
+        double variance = 0.8 + ThreadLocalRandom.current().nextDouble() * 0.4; // 0.8 to 1.2
+        return Math.max(1, (int) Math.round(attackCooldown * variance));
+    }
 
     private boolean isSlimeType() {
         String id = sourceCard.getMobId();
@@ -324,7 +335,8 @@ public class ArenaMob {
         net.minecraft.text.MutableText mobName = sourceCard.getDefinition() != null
                 ? Text.translatable(sourceCard.getDefinition().translationKey())
                 : Text.literal("Mob");
-        String levelStr = " \u00A76Lv." + sourceCard.getLevel();
+        String levelStr = MobCardRegistry.isUpgradeLocked(sourceCard.getMobId())
+                ? "" : " \u00A76Lv." + sourceCard.getLevel();
         marker.setCustomName(Text.literal(teamColor).append(mobName).append(Text.literal(levelStr + " " + bar + " " + hpColor + (int) hp)));
     }
 
@@ -529,7 +541,7 @@ public class ArenaMob {
                     if (dist > rangedRange) moveToward(entity, tEnt.getPos());
                     else if (attackCooldownRemaining <= 0) {
                         performRangedAttack(entity, target, world);
-                        attackCooldownRemaining = attackCooldown;
+                        attackCooldownRemaining = getRandomizedCooldown();
                     }
                 }
                 case CREEPER_EXPLOSION -> {
@@ -539,25 +551,25 @@ public class ArenaMob {
                 case TELEPORT_MELEE -> {
                     if (dist > meleeRange && dist < 16.0 && attackCooldownRemaining <= 0) {
                         performTeleportAttack(entity, target, world, allMobs);
-                        attackCooldownRemaining = attackCooldown;
+                        attackCooldownRemaining = getRandomizedCooldown();
                     } else if (dist > meleeRange) moveToward(entity, tEnt.getPos());
                     else if (attackCooldownRemaining <= 0) {
                         performAttack(entity, target, world, allMobs);
-                        attackCooldownRemaining = attackCooldown;
+                        attackCooldownRemaining = getRandomizedCooldown();
                     }
                 }
                 case SUMMONER -> {
                     if (dist > rangedRange) moveToward(entity, tEnt.getPos());
                     else if (attackCooldownRemaining <= 0) {
                         performSummonerAttack(entity, target, world, allMobs);
-                        attackCooldownRemaining = attackCooldown;
+                        attackCooldownRemaining = getRandomizedCooldown();
                     }
                 }
                 default -> { // MELEE
                     if (dist > meleeRange) moveToward(entity, tEnt.getPos());
                     else if (attackCooldownRemaining <= 0) {
                         performAttack(entity, target, world, allMobs);
-                        attackCooldownRemaining = attackCooldown;
+                        attackCooldownRemaining = getRandomizedCooldown();
                     }
                 }
             }
@@ -573,13 +585,13 @@ public class ArenaMob {
                 if (dist > Math.min(rangedRange, 8.0)) moveToward(entity, sPos);
                 else if (attackCooldownRemaining <= 0) {
                     performStructureAttack(entity, targetStructure, world);
-                    attackCooldownRemaining = attackCooldown;
+                    attackCooldownRemaining = getRandomizedCooldown();
                 }
             } else {
                 if (dist > meleeRange + 2.5) moveToward(entity, sPos);
                 else if (attackCooldownRemaining <= 0) {
                     performStructureAttack(entity, targetStructure, world);
-                    attackCooldownRemaining = attackCooldown;
+                    attackCooldownRemaining = getRandomizedCooldown();
                 }
             }
         } else {
@@ -606,7 +618,7 @@ public class ArenaMob {
                 Entity ne = nearby.getEntity(world);
                 if (ne != null && entity.squaredDistanceTo(ne) <= 6.25 && attackCooldownRemaining <= 0) {
                     performAttack(entity, nearby, world, allMobs);
-                    attackCooldownRemaining = attackCooldown;
+                    attackCooldownRemaining = getRandomizedCooldown();
                 }
             }
         }

@@ -9,6 +9,21 @@ public class MobCardRegistry {
     private static final Map<String, MobCardDefinition> REGISTRY = new LinkedHashMap<>();
     private static final Map<EntityType<?>, MobCardDefinition> BY_ENTITY = new HashMap<>();
 
+    /**
+     * Mobs in this set cannot be upgraded (merged) and always stay at level 1.
+     * Their level is not displayed in UI (card screen, HP bar, upgrade table).
+     */
+    private static final Set<String> UPGRADE_LOCKED = Set.of(
+            "iron_golem"
+    );
+
+    /**
+     * Check if a mob type is upgrade-locked (cannot be leveled up).
+     */
+    public static boolean isUpgradeLocked(String mobId) {
+        return UPGRADE_LOCKED.contains(mobId);
+    }
+
     public static void init() {
         // === UNDEAD ===
         register(new MobCardDefinition(

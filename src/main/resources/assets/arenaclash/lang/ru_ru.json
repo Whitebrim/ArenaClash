@@ -272,6 +272,7 @@
   "arenaclash.upgrade.fail.error": "§cОшибка объединения! Попробуйте снова.",
   "arenaclash.upgrade.fail.not_found": "§cКарта не найдена в инвентаре!",
   "arenaclash.upgrade.fail.same_card": "§cНельзя объединить карту саму с собой!",
+  "arenaclash.upgrade.fail.upgrade_locked": "§cЭтот моб не может быть улучшен!",
   "arenaclash.upgrade.header": "⚒  УЛУЧШЕНИЕ КАРТ  ⚒",
   "arenaclash.upgrade.hint": "§7Выберите одинаковые карты (×2+) и нажмите [Space] Объединить | [ESC] Закрыть",
   "arenaclash.upgrade.lv": "Ур.%s",

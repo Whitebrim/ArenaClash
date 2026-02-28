@@ -87,6 +87,8 @@ public class CardUpgradeScreen extends Screen {
     private void rebuildCardGroups() {
         Map<String, List<MobCard>> grouped = new LinkedHashMap<>();
         for (MobCard card : inventory.getAllCards()) {
+            // Skip upgrade-locked mobs — they cannot be merged
+            if (com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card.getMobId())) continue;
             String key = card.getMobId() + ":" + card.getLevel();
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(card);
         }

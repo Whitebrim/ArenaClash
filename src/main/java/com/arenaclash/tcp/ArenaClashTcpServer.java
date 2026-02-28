@@ -349,6 +349,11 @@ public class ArenaClashTcpServer {
                 return;
             }
 
+            if (com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card1.getMobId())) {
+                session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.upgrade_locked"));
+                return;
+            }
+
             if (card1.getLevel() != card2.getLevel()) {
                 session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.different_level"));
                 return;

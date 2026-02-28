@@ -272,6 +272,7 @@
   "arenaclash.upgrade.fail.error": "§cMerge failed! Try again.",
   "arenaclash.upgrade.fail.not_found": "§cCard not found in inventory!",
   "arenaclash.upgrade.fail.same_card": "§cCannot merge a card with itself!",
+  "arenaclash.upgrade.fail.upgrade_locked": "§cThis mob cannot be upgraded!",
   "arenaclash.upgrade.header": "⚒  CARD UPGRADE  ⚒",
   "arenaclash.upgrade.hint": "§7Select matching cards (×2+) and click [Space] Merge | [ESC] Close",
   "arenaclash.upgrade.lv": "Lv.%s",

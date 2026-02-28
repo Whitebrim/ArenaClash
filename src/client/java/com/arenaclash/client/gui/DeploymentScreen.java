@@ -126,7 +126,9 @@ public class DeploymentScreen extends Screen {
             ctx.fill(listX, y, listX + CARD_LIST_WIDTH, y + CARD_ENTRY_HEIGHT - 1, bgColor);
 
             // Name
-            ctx.drawTextWithShadow(textRenderer, I18n.translate(def.translationKey()) + " " + I18n.translate("arenaclash.screen.deploy.lv", String.valueOf(card.getLevel())), listX + 4, y + 2, 0xFFFFFF);
+            String lvSuffix = com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card.getMobId())
+                    ? "" : " " + I18n.translate("arenaclash.screen.deploy.lv", String.valueOf(card.getLevel()));
+            ctx.drawTextWithShadow(textRenderer, I18n.translate(def.translationKey()) + lvSuffix, listX + 4, y + 2, 0xFFFFFF);
             // Stats line
             String stats = String.format("♥%.0f ⚔%.0f ⚡%.1f", card.getHP(), card.getAttack(), card.getSpeed());
             ctx.drawTextWithShadow(textRenderer, stats, listX + 4, y + 14, 0xAAAAAA);

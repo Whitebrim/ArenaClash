@@ -73,7 +73,9 @@ public class CardScreen extends Screen {
             context.drawBorder(startX - 2, y - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4, borderColor);
 
             // Mob name + level
-            String name = "§f" + I18n.translate(def.translationKey()) + " " + I18n.translate("arenaclash.screen.cards.lv", String.valueOf(card.getLevel()));
+            String lvSuffix = com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card.getMobId())
+                    ? "" : " " + I18n.translate("arenaclash.screen.cards.lv", String.valueOf(card.getLevel()));
+            String name = "§f" + I18n.translate(def.translationKey()) + lvSuffix;
             context.drawTextWithShadow(textRenderer, name, startX + 4, y + 2, 0xFFFFFF);
 
             // Stats

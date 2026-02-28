@@ -454,6 +454,11 @@ public class ArenaManager {
     public void tickBattle() {
         if (!battleActive || arenaWorld == null) return;
 
+        // Shuffle mob tick order each tick to prevent first-player advantage.
+        // Without this, P1 mobs always attack before P2 mobs in the same tick,
+        // giving P1 a systematic ~200ms head start on every exchange.
+        Collections.shuffle(activeMobs);
+
         // Tick all active mobs
         for (ArenaMob mob : activeMobs) {
             if (!mob.isDead()) {
