@@ -324,7 +324,8 @@ public class ArenaMob {
         net.minecraft.text.MutableText mobName = sourceCard.getDefinition() != null
                 ? Text.translatable(sourceCard.getDefinition().translationKey())
                 : Text.literal("Mob");
-        marker.setCustomName(Text.literal(teamColor).append(mobName).append(Text.literal(" " + bar + " " + hpColor + (int) hp)));
+        String levelStr = " \u00A76Lv." + sourceCard.getLevel();
+        marker.setCustomName(Text.literal(teamColor).append(mobName).append(Text.literal(levelStr + " " + bar + " " + hpColor + (int) hp)));
     }
 
     private void removeHpBar(ServerWorld world) {
@@ -877,7 +878,7 @@ public class ArenaMob {
     private void performCreeperExplosion(Entity creeper, ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         Vec3d center = creeper.getPos();
         double explosionRadius = 4.0;
-        float explosionDamage = 20.0f;
+        float explosionDamage = (float) Math.max(10.0, this.attackDamage); // Uses card attack, scales with level
 
         for (ArenaMob mob : allMobs) {
             if (mob == this || mob.getTeam() == team || mob.isDead()) continue;
@@ -900,7 +901,7 @@ public class ArenaMob {
         for (ArenaStructure struct : structures) {
             if (struct.getOwner() == team || struct.isDestroyed()) continue;
             Vec3d sPos = Vec3d.ofCenter(struct.getPosition());
-            if (hDist(center, sPos) <= explosionRadius + 2.0) struct.damage(explosionDamage * 0.5f, world);
+            if (hDist(center, sPos) <= explosionRadius + 2.0) struct.damage(explosionDamage * 2.0f, world);
         }
 
         world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 1, center.z, 1, 0, 0, 0, 0);

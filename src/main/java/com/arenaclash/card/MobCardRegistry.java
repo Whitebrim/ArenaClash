@@ -65,7 +65,7 @@ public class MobCardRegistry {
         // === HOSTILE - SPECIAL ===
         register(new MobCardDefinition(
                 EntityType.CREEPER, "creeper", "Creeper",
-                20.0, 2.5, 0.0, 0,   // Creeper explodes, no melee
+                20.0, 2.5, 10.0, 0,   // Creeper explodes for 10 damage (scales with level)
                 false, false, List.of("potion"), MobCategory.NEUTRAL));
         register(new MobCardDefinition(
                 EntityType.WITCH, "witch", "Witch",

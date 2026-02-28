@@ -205,6 +205,20 @@ public class GameEventHandlers {
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (!(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
 
+            // Card Upgrade Workbench can ONLY be placed on the arena world during an active game
+            // This check must run BEFORE isGameActive() gate, because in singleplayer (survival)
+            // the game manager reports inactive, and we still need to block placement there.
+            if (player.getStackInHand(hand).getItem() instanceof net.minecraft.item.BlockItem bi
+                    && bi.getBlock() instanceof com.arenaclash.block.CardUpgradeWorkbenchBlock) {
+                GameManager gmCheck = GameManager.getInstance();
+                ServerWorld arenaW = (gmCheck.isGameActive() && gmCheck.getWorldManager() != null)
+                        ? gmCheck.getWorldManager().getArenaWorld() : null;
+                if (arenaW == null || world != arenaW) {
+                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.workbench_arena_only"), true);
+                    return resyncAndFail(serverPlayer);
+                }
+            }
+
             GameManager gm = GameManager.getInstance();
             if (!gm.isGameActive()) return ActionResult.PASS;
 
@@ -212,14 +226,28 @@ public class GameEventHandlers {
             ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
 
             // Check if player is on the arena world
-            if (world != arenaWorld) return ActionResult.PASS;
+            if (world != arenaWorld) {
+                return ActionResult.PASS;
+            }
+
+            // Universal build zone protection: prevent interacting with blocks
+            // in the opponent's build zone (chests, workbenches, etc.)
+            PlayerGameData interactData = gm.getPlayerData(serverPlayer.getUuid());
+            if (interactData != null && gm.getPhase() == GamePhase.PREPARATION) {
+                TeamSide playerTeam = interactData.getTeam();
+                TeamSide opponentTeam = (playerTeam == TeamSide.PLAYER1) ? TeamSide.PLAYER2 : TeamSide.PLAYER1;
+                if (gm.getArenaManager().isInBuildZone(opponentTeam, clickedPos)) {
+                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.enemy_build_zone"), true);
+                    return resyncAndFail(serverPlayer);
+                }
+            }
 
             // Check if clicking a bell block
             if (world.getBlockState(clickedPos).isOf(Blocks.BELL)) {
                 PlayerGameData data = gm.getPlayerData(serverPlayer.getUuid());
                 if (data == null) {
                     serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_in_game"), true);
-                    return ActionResult.FAIL;
+                    return resyncAndFail(serverPlayer);
                 }
 
                 // Check if this bell belongs to the player's team
@@ -235,17 +263,29 @@ public class GameEventHandlers {
                     return ActionResult.SUCCESS;
                 } else if (bellTeam != null) {
                     serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_your_bell"), true);
-                    return ActionResult.FAIL;
+                    return resyncAndFail(serverPlayer);
                 }
             }
 
             // Build zone enforcement for block placement
             BlockPos placePos = clickedPos.offset(hitResult.getSide());
+
             if (!isBlockActionAllowed(serverPlayer, placePos, true)) {
-                return ActionResult.FAIL;
+                return resyncAndFail(serverPlayer);
             }
             return ActionResult.PASS;
         });
+    }
+
+    /**
+     * Resync the player's inventory to the client and return FAIL.
+     * This prevents ghost blocks: the client predicts block placement and decrements
+     * the item count, but the server rejects it. Without resync, the client shows
+     * the wrong item count until the player interacts with their inventory.
+     */
+    private static ActionResult resyncAndFail(ServerPlayerEntity player) {
+        player.currentScreenHandler.syncState();
+        return ActionResult.FAIL;
     }
 
     /**

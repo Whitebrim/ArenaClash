@@ -2,6 +2,7 @@ package com.arenaclash.command;
 
 import com.arenaclash.card.CardInventory;
 import com.arenaclash.card.MobCard;
+import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.game.PlayerGameData;
@@ -9,6 +10,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.server.command.CommandManager;
@@ -151,18 +153,36 @@ public class GameCommands {
                                 return 1;
                             })));
 
-            // /ac givecard <player> <mobId> [count] - debug command to give cards
+            // /ac givecard <player> <mobId> [count] [level] - debug command to give cards
+            // Mob ID autocomplete from MobCardRegistry
+            SuggestionProvider<ServerCommandSource> mobIdSuggestions = (ctx, builder) -> {
+                String remaining = builder.getRemaining().toLowerCase();
+                for (var def : MobCardRegistry.getAll()) {
+                    if (def.id().toLowerCase().startsWith(remaining)) {
+                        builder.suggest(def.id());
+                    }
+                }
+                return builder.buildFuture();
+            };
+
             root.then(literal("givecard")
                     .then(argument("player", EntityArgumentType.player())
                             .then(argument("mobId", StringArgumentType.word())
+                                    .suggests(mobIdSuggestions)
                                     .executes(ctx -> giveCard(ctx.getSource(),
                                             EntityArgumentType.getPlayer(ctx, "player"),
-                                            StringArgumentType.getString(ctx, "mobId"), 1))
+                                            StringArgumentType.getString(ctx, "mobId"), 1, 1))
                                     .then(argument("count", IntegerArgumentType.integer(1, 64))
                                             .executes(ctx -> giveCard(ctx.getSource(),
                                                     EntityArgumentType.getPlayer(ctx, "player"),
                                                     StringArgumentType.getString(ctx, "mobId"),
-                                                    IntegerArgumentType.getInteger(ctx, "count")))))));
+                                                    IntegerArgumentType.getInteger(ctx, "count"), 1))
+                                            .then(argument("level", IntegerArgumentType.integer(1, 100))
+                                                    .executes(ctx -> giveCard(ctx.getSource(),
+                                                            EntityArgumentType.getPlayer(ctx, "player"),
+                                                            StringArgumentType.getString(ctx, "mobId"),
+                                                            IntegerArgumentType.getInteger(ctx, "count"),
+                                                            IntegerArgumentType.getInteger(ctx, "level"))))))));
 
             // /ac bell - ring the bell
             root.then(literal("bell")
@@ -250,7 +270,7 @@ public class GameCommands {
         });
     }
 
-    private static int giveCard(ServerCommandSource source, ServerPlayerEntity player, String mobId, int count) {
+    private static int giveCard(ServerCommandSource source, ServerPlayerEntity player, String mobId, int count, int level) {
         PlayerGameData data = GameManager.getInstance().getPlayerData(player.getUuid());
         if (data == null) {
             source.sendFeedback(() -> Text.translatable("arenaclash.cmd.player_not_in_game"), false);
@@ -262,12 +282,15 @@ public class GameCommands {
             return 0;
         }
         for (int i = 0; i < count; i++) {
-            data.getCardInventory().addCard(new MobCard(mobId));
+            MobCard card = new MobCard(mobId);
+            card.setLevel(level);
+            data.getCardInventory().addCard(card);
         }
         // Sync cards to client so GUI updates immediately
         GameManager.getInstance().syncCards(player);
+        String lvStr = level > 1 ? " Lv." + level : "";
         source.sendFeedback(() -> Text.translatable("arenaclash.cmd.gave_card",
-                String.valueOf(count), Text.translatable(def.translationKey()), player.getName().getString()), true);
+                String.valueOf(count), Text.translatable(def.translationKey()).getString() + lvStr, player.getName().getString()), true);
         return 1;
     }
 }

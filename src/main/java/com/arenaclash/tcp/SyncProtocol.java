@@ -48,6 +48,7 @@ public class SyncProtocol {
     public static final String C2S_CHAT = "CHAT";
     public static final String C2S_WORLD_READY = "WORLD_READY";
     public static final String C2S_PAUSE_STATE = "PAUSE_STATE";
+    public static final String C2S_MERGE_CARDS = "MERGE_CARDS";
 
     // === IO Helpers ===
 
@@ -265,6 +266,13 @@ public class SyncProtocol {
     public static JsonObject pauseState(boolean paused) {
         JsonObject msg = makeMessage(C2S_PAUSE_STATE);
         msg.addProperty("paused", paused);
+        return msg;
+    }
+
+    public static JsonObject mergeCards(String cardId1, String cardId2) {
+        JsonObject msg = makeMessage(C2S_MERGE_CARDS);
+        msg.addProperty("cardId1", cardId1);
+        msg.addProperty("cardId2", cardId2);
         return msg;
     }
 }

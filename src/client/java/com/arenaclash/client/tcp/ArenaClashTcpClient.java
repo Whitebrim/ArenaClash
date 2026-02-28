@@ -344,4 +344,8 @@ public class ArenaClashTcpClient {
     public void sendInventorySync(String itemsSnbt) {
         send(SyncProtocol.inventorySync(itemsSnbt));
     }
+
+    public void sendMergeCards(String cardId1, String cardId2) {
+        send(SyncProtocol.mergeCards(cardId1, cardId2));
+    }
 }

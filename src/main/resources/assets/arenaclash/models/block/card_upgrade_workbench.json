@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "arenaclash:block/card_upgrade_workbench_top",
+    "bottom": "arenaclash:block/card_upgrade_workbench_bottom",
+    "side": "arenaclash:block/card_upgrade_workbench_side"
+  }
+}

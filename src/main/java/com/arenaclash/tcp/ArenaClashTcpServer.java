@@ -295,6 +295,11 @@ public class ArenaClashTcpServer {
                     srv.execute(() -> gm.updatePauseFromClients());
                 }
             }
+            case SyncProtocol.C2S_MERGE_CARDS -> {
+                String cardId1 = msg.get("cardId1").getAsString();
+                String cardId2 = msg.get("cardId2").getAsString();
+                handleMergeCards(session, cardId1, cardId2);
+            }
         }
     }
 
@@ -314,6 +319,68 @@ public class ArenaClashTcpServer {
     public void syncCards(TcpSession session) {
         String cardsSnbt = session.getCardInventory().toNbt().toString();
         session.send(SyncProtocol.cardSync(cardsSnbt));
+    }
+
+    /**
+     * Handle card merge request: combine two identical cards (same mobId, same level)
+     * into one card of the next level.
+     */
+    private void handleMergeCards(TcpSession session, String cardId1Str, String cardId2Str) {
+        try {
+            java.util.UUID id1 = java.util.UUID.fromString(cardId1Str);
+            java.util.UUID id2 = java.util.UUID.fromString(cardId2Str);
+
+            if (id1.equals(id2)) {
+                session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.same_card"));
+                return;
+            }
+
+            com.arenaclash.card.CardInventory inv = session.getCardInventory();
+            com.arenaclash.card.MobCard card1 = inv.getCard(id1);
+            com.arenaclash.card.MobCard card2 = inv.getCard(id2);
+
+            if (card1 == null || card2 == null) {
+                session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.not_found"));
+                return;
+            }
+
+            if (!card1.getMobId().equals(card2.getMobId())) {
+                session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.different_type"));
+                return;
+            }
+
+            if (card1.getLevel() != card2.getLevel()) {
+                session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.different_level"));
+                return;
+            }
+
+            // Perform merge: remove both, add new card at level + 1
+            String mobId = card1.getMobId();
+            int newLevel = card1.getLevel() + 1;
+
+            inv.removeCard(id1);
+            inv.removeCard(id2);
+
+            com.arenaclash.card.MobCard merged = new com.arenaclash.card.MobCard(mobId);
+            merged.setLevel(newLevel);
+            inv.addCard(merged);
+
+            // Sync updated inventory
+            syncCards(session);
+
+            // Send success message
+            var def = com.arenaclash.card.MobCardRegistry.getById(mobId);
+            String mobTranslationKey = def != null ? def.translationKey() : mobId;
+            session.send(SyncProtocol.translatableMessage(
+                    "arenaclash.upgrade.success", mobTranslationKey, String.valueOf(newLevel)));
+
+            ArenaClash.LOGGER.info("[ArenaClash TCP] Player {} merged 2x {} Lv.{} → Lv.{}",
+                    session.getPlayerName(), mobId, newLevel - 1, newLevel);
+
+        } catch (Exception e) {
+            session.send(SyncProtocol.translatableMessage("arenaclash.upgrade.fail.error"));
+            ArenaClash.LOGGER.error("Error merging cards for {}: {}", session.getPlayerName(), e.getMessage());
+        }
     }
 
     // === Getters ===

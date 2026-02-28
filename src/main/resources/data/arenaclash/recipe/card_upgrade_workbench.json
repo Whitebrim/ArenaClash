@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "ICI",
+    "CWC",
+    "ICI"
+  ],
+  "key": {
+    "I": { "item": "minecraft:iron_ingot" },
+    "C": { "item": "minecraft:copper_ingot" },
+    "W": { "item": "minecraft:crafting_table" }
+  },
+  "result": {
+    "id": "arenaclash:card_upgrade_workbench",
+    "count": 1
+  }
+}

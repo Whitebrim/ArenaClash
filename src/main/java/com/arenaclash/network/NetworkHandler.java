@@ -89,6 +89,16 @@ public class NetworkHandler {
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /**
+     * Server tells client to open the Card Upgrade GUI.
+     * Sent when the player right-clicks the workbench and passes all server-side checks.
+     */
+    public record OpenUpgradeGui() implements CustomPayload {
+        public static final Id<OpenUpgradeGui> ID = new Id<>(Identifier.of("arenaclash", "open_upgrade_gui"));
+        public static final PacketCodec<RegistryByteBuf, OpenUpgradeGui> CODEC = PacketCodec.unit(new OpenUpgradeGui());
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     // === C2S (Client to Server) Packets ===
 
     /**
@@ -145,6 +155,7 @@ public class NetworkHandler {
         PayloadTypeRegistry.playS2C().register(CardObtained.ID, CardObtained.CODEC);
         PayloadTypeRegistry.playS2C().register(DeploymentSlotSync.ID, DeploymentSlotSync.CODEC);
         PayloadTypeRegistry.playS2C().register(BattleResultNotify.ID, BattleResultNotify.CODEC);
+        PayloadTypeRegistry.playS2C().register(OpenUpgradeGui.ID, OpenUpgradeGui.CODEC);
     }
 
     public static void registerC2SPayloads() {

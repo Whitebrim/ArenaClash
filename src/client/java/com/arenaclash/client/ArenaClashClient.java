@@ -1,6 +1,7 @@
 package com.arenaclash.client;
 
 import com.arenaclash.client.gui.CardScreen;
+import com.arenaclash.client.gui.CardUpgradeScreen;
 import com.arenaclash.client.gui.DeploymentScreen;
 import com.arenaclash.client.render.GameHudRenderer;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
@@ -95,10 +96,24 @@ public class ArenaClashClient implements ClientModInitializer {
 
         registerMcPacketHandlers();
         registerClientCommands();
+        registerWorkbenchInteraction();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) ->
                 GameHudRenderer.render(drawContext, renderTickCounter));
+    }
+
+    /**
+     * Register client-side block interaction for the Card Upgrade Workbench.
+     * When the server confirms the workbench interaction is valid,
+     * it sends an OpenUpgradeGui packet. The client opens the GUI on receipt.
+     * This replaces the old client-side UseBlockCallback approach, ensuring
+     * the GUI never opens when the server would block the interaction
+     * (e.g., enemy build zone, wrong phase).
+     */
+    private void registerWorkbenchInteraction() {
+        // No client-side UseBlockCallback needed — the server sends OpenUpgradeGui packet
+        // See registerNetworkHandlers() for the receiver
     }
 
     /**
@@ -499,6 +514,8 @@ public class ArenaClashClient implements ClientModInitializer {
                 client.setScreen(new CardScreen(cardInventoryData));
             } else if (client.currentScreen instanceof DeploymentScreen && cardInventoryData != null) {
                 client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
+            } else if (client.currentScreen instanceof CardUpgradeScreen && cardInventoryData != null) {
+                client.setScreen(new CardUpgradeScreen(cardInventoryData));
             }
         } catch (Exception e) {
             LOGGER.error("Failed to parse card sync from TCP: {}", e.getMessage());
@@ -595,6 +612,8 @@ public class ArenaClashClient implements ClientModInitializer {
                         client.setScreen(new CardScreen(cardInventoryData));
                     } else if (client.currentScreen instanceof DeploymentScreen) {
                         client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
+                    } else if (client.currentScreen instanceof CardUpgradeScreen) {
+                        client.setScreen(new CardUpgradeScreen(cardInventoryData));
                     }
                 }));
 
@@ -622,6 +641,15 @@ public class ArenaClashClient implements ClientModInitializer {
                     if (context.client().player != null) {
                         context.client().player.sendMessage(Text.translatable(
                                 "arenaclash.msg.battle_result", payload.resultType(), payload.winner()));
+                    }
+                }));
+
+        // Open upgrade GUI when server confirms the workbench interaction is valid
+        ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.OpenUpgradeGui.ID,
+                (payload, context) -> context.client().execute(() -> {
+                    if (cardInventoryData != null) {
+                        CardUpgradeScreen.clearPersistedState();
+                        MinecraftClient.getInstance().setScreen(new CardUpgradeScreen(cardInventoryData));
                     }
                 }));
     }

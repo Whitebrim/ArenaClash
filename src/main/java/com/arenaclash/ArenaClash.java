@@ -1,5 +1,6 @@
 package com.arenaclash;
 
+import com.arenaclash.block.ModBlocks;
 import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.command.GameCommands;
 import com.arenaclash.config.GameConfig;
@@ -25,6 +26,7 @@ public class ArenaClash implements ModInitializer {
 
         GameConfig.load();
         MobCardRegistry.init();
+        ModBlocks.register();
         NetworkHandler.registerS2CPayloads();
         NetworkHandler.registerC2SPayloads();
         GameCommands.register();
