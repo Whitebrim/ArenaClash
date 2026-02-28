@@ -29,6 +29,9 @@ public class DeploymentScreen extends Screen {
     private MobCard selectedCard = null;
     private int cardScrollOffset = 0;
 
+    // Static scroll memory — persists when screen is recreated on CARD_SYNC
+    private static int persistedScrollOffset = 0;
+
     // Layout constants
     private static final int CARD_LIST_WIDTH = 180;
     private static final int CARD_ENTRY_HEIGHT = 28;
@@ -53,6 +56,9 @@ public class DeploymentScreen extends Screen {
         this.inventory = CardInventory.fromNbt(inventoryData);
         this.slotData = slotData;
         parseSlotData();
+        // Restore persisted scroll position, clamped to valid range
+        int maxScroll = Math.max(0, inventory.getCardCount() - CARDS_VISIBLE);
+        this.cardScrollOffset = Math.min(persistedScrollOffset, maxScroll);
     }
 
     private void parseSlotData() {
@@ -86,11 +92,13 @@ public class DeploymentScreen extends Screen {
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("▲"), b -> {
             if (cardScrollOffset > 0) cardScrollOffset--;
+            persistedScrollOffset = cardScrollOffset;
         }).dimensions(listX + CARD_LIST_WIDTH + 5, listY, 18, 18).build());
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("▼"), b -> {
             int max = Math.max(0, inventory.getCardCount() - CARDS_VISIBLE);
             if (cardScrollOffset < max) cardScrollOffset++;
+            persistedScrollOffset = cardScrollOffset;
         }).dimensions(listX + CARD_LIST_WIDTH + 5, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT - 18, 18, 18).build());
     }
 
@@ -248,6 +256,7 @@ public class DeploymentScreen extends Screen {
             int max = Math.max(0, inventory.getCardCount() - CARDS_VISIBLE);
             if (cardScrollOffset < max) cardScrollOffset++;
         }
+        persistedScrollOffset = cardScrollOffset;
         return true;
     }
 

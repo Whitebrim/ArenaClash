@@ -74,7 +74,9 @@ public class ConnectScreen extends Screen {
             ArenaClashClient.disconnectTcp();
             statusType = StatusType.IDLE;
             statusText = "";
-            updateButtonStates();
+            // Re-init to rebuild buttons (removes stale Continue button)
+            clearChildren();
+            init();
         }).dimensions(contentX + btnWidth + 4, btnY, btnWidth, 20).build());
 
         // Continue button — only when in-game

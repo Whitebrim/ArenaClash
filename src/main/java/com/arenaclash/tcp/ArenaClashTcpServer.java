@@ -258,11 +258,32 @@ public class ArenaClashTcpServer {
                         final String cmd = chatMessage.substring(1); // Remove leading "/"
                         server.execute(() -> {
                             try {
+                                // Create a command source that relays feedback to the TCP session
+                                net.minecraft.server.command.CommandOutput tcpOutput = new net.minecraft.server.command.CommandOutput() {
+                                    @Override
+                                    public void sendMessage(net.minecraft.text.Text message) {
+                                        session.send(SyncProtocol.serverMessage(message.getString()));
+                                    }
+                                    @Override
+                                    public boolean shouldReceiveFeedback() { return true; }
+                                    @Override
+                                    public boolean shouldTrackOutput() { return true; }
+                                    @Override
+                                    public boolean shouldBroadcastConsoleToOps() { return false; }
+                                };
                                 net.minecraft.server.command.ServerCommandSource source =
-                                        server.getCommandSource().withSilent();
+                                        new net.minecraft.server.command.ServerCommandSource(
+                                                tcpOutput,
+                                                server.getCommandSource().getPosition(),
+                                                server.getCommandSource().getRotation(),
+                                                server.getOverworld(),
+                                                4, // permission level
+                                                session.getPlayerName(),
+                                                net.minecraft.text.Text.literal(session.getPlayerName()),
+                                                server,
+                                                null
+                                        );
                                 server.getCommandManager().executeWithPrefix(source, "/" + cmd);
-                                // Send command output back to the player
-                                // (The command itself should send messages via TCP broadcast)
                             } catch (Exception e) {
                                 session.send(SyncProtocol.translatableMessage("arenaclash.tcp.command_error", e.getMessage()));
                             }
