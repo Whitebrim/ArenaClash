@@ -128,10 +128,9 @@ public class GameEventHandlers {
                 if (!player.getServer().isDedicated()) {
                     if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
-                    player.sendMessage(Text.translatable("arenaclash.msg.card_obtained", Text.translatable(def.translationKey())));
+                    // Message with card count is sent by the TCP server after CARD_OBTAINED
                     if (bonusCard) {
                         com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
-                        player.sendMessage(Text.translatable("arenaclash.msg.looting_bonus", Text.translatable(def.translationKey())));
                     }
                 } else {
                     GameManager gm = GameManager.getInstance();

@@ -168,6 +168,7 @@
   "arenaclash.msg.battle_result": "§6=== %1$s — Победитель: %2$s ===",
   "arenaclash.msg.build_zone_only": "§cСтроить можно только в зоне строительства!",
   "arenaclash.msg.card_obtained": "§a+ Получена карточка %s!",
+  "arenaclash.msg.card_obtained_count": "§a+ Получена карточка %s! §7(в колоде: %s шт)",
   "arenaclash.msg.card_obtained_star": "§6§l★ Карточка %s! ★",
   "arenaclash.msg.chat_format": "§7[%1$s] §f%2$s",
   "arenaclash.msg.enemy_build_zone": "§cВы не можете взаимодействовать с зоной строительства противника!",

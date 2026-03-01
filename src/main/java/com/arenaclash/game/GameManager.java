@@ -825,8 +825,9 @@ public class GameManager {
         if (def == null) return;
 
         session.addCard(def.id());
+        int count = session.getCardInventory().getCardsByMobId(def.id()).size();
         tcpServer.syncCards(session);
-        session.send(SyncProtocol.translatableMessage("arenaclash.tcp.card_obtained", def.translationKey()));
+        session.send(SyncProtocol.translatableMessage("arenaclash.msg.card_obtained_count", def.translationKey(), String.valueOf(count)));
     }
 
     public void onTcpReady(TcpSession session) {

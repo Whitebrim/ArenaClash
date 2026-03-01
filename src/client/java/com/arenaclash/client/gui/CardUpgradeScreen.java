@@ -23,6 +23,9 @@ public class CardUpgradeScreen extends Screen {
     private final CardInventory inventory;
     private int scrollOffset = 0;
 
+    // Static scroll memory — persists across screen recreations after merge
+    private static int persistedScrollOffset = 0;
+
     // Panel dimensions
     private int panelX, panelY, panelWidth, panelHeight;
 
@@ -82,6 +85,10 @@ public class CardUpgradeScreen extends Screen {
 
         // Restore merge cooldown
         this.mergeCooldown = persistedMergeCooldown;
+
+        // Restore persisted scroll, clamped to valid range
+        int maxScroll = Math.max(0, cardGroups.size() - VISIBLE_ROWS);
+        this.scrollOffset = Math.min(persistedScrollOffset, maxScroll);
     }
 
     private void rebuildCardGroups() {
@@ -480,6 +487,7 @@ public class CardUpgradeScreen extends Screen {
         } else if (verticalAmount < 0 && scrollOffset < maxScroll) {
             scrollOffset++;
         }
+        persistedScrollOffset = scrollOffset;
         return true;
     }
 
@@ -531,6 +539,7 @@ public class CardUpgradeScreen extends Screen {
     public static void clearPersistedState() {
         persistedSelectedKey = null;
         persistedMergeCooldown = 0;
+        persistedScrollOffset = 0;
     }
 
     // ================================================================

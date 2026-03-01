@@ -214,10 +214,13 @@ public class ArenaClashTcpServer {
         switch (type) {
             case SyncProtocol.C2S_CARD_OBTAINED -> {
                 String mobId = msg.get("mobId").getAsString();
-                if (MobCardRegistry.getById(mobId) != null) {
+                var def = MobCardRegistry.getById(mobId);
+                if (def != null) {
                     session.addCard(mobId);
-                    // Don't send ack message here - client already shows it locally
-                    // Sync updated card list
+                    int count = session.getCardInventory().getCardsByMobId(mobId).size();
+                    session.send(SyncProtocol.translatableMessage(
+                            "arenaclash.msg.card_obtained_count",
+                            def.translationKey(), String.valueOf(count)));
                     syncCards(session);
                 }
             }

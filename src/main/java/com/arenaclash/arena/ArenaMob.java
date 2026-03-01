@@ -62,6 +62,7 @@ public class ArenaMob {
 
     private UUID targetEntityId;
     private ArenaStructure targetStructure;
+    private Vec3d structureApproachPos; // Assigned approach position around a structure
     private boolean markedDead = false;
 
     private double laneMinX, laneMaxX, laneMinZ, laneMaxZ;
@@ -288,6 +289,7 @@ public class ArenaMob {
         this.state = MobState.RETREATING;
         this.targetEntityId = null;
         this.targetStructure = null;
+        this.structureApproachPos = null;
     }
 
     // ================================================================
@@ -476,6 +478,7 @@ public class ArenaMob {
             if (enemy != null) {
                 targetEntityId = enemy.getEntityId();
                 targetStructure = null;
+                structureApproachPos = null;
                 state = MobState.FIGHTING;
                 return;
             }
@@ -484,8 +487,7 @@ public class ArenaMob {
             if (struct != null) {
                 double dist = entity.getBlockPos().getSquaredDistance(struct.getPosition());
                 if (dist <= 10.0 * 10.0) {
-                    targetStructure = struct;
-                    targetEntityId = null;
+                    assignStructureTarget(struct, allMobs);
                     state = MobState.FIGHTING;
                     return;
                 }
@@ -507,8 +509,7 @@ public class ArenaMob {
         if (waypoints != null && currentWaypointIndex >= waypoints.size()) {
             ArenaStructure nearestStruct = findNearestEnemyStructure(entity, structures, 100.0);
             if (nearestStruct != null && canFight) {
-                targetStructure = nearestStruct;
-                targetEntityId = null;
+                assignStructureTarget(nearestStruct, allMobs);
                 state = MobState.FIGHTING;
             } else if (nearestStruct != null) {
                 Vec3d sPos = Vec3d.ofCenter(nearestStruct.getPosition());
@@ -574,8 +575,8 @@ public class ArenaMob {
                 }
             }
         } else if (targetStructure != null) {
-            if (targetStructure.isDestroyed()) { targetStructure = null; skipPassedWaypoints(entity); state = MobState.ADVANCING; return; }
-            Vec3d sPos = Vec3d.ofCenter(targetStructure.getPosition());
+            if (targetStructure.isDestroyed()) { targetStructure = null; structureApproachPos = null; skipPassedWaypoints(entity); state = MobState.ADVANCING; return; }
+            Vec3d sPos = getStructureMoveTarget();
             double dist = hDist(entity.getPos(), sPos);
 
             if (atkType == AttackType.CREEPER_EXPLOSION) {
@@ -600,7 +601,7 @@ public class ArenaMob {
             ArenaMob enemy = findNearestEnemy(world, entity, allMobs, searchRange);
             if (enemy != null) { targetEntityId = enemy.getEntityId(); return; }
             ArenaStructure struct = findNearestEnemyStructure(entity, structures, 100.0);
-            if (struct != null) { targetStructure = struct; return; }
+            if (struct != null) { assignStructureTarget(struct, allMobs); return; }
             skipPassedWaypoints(entity);
             state = MobState.ADVANCING;
         }
@@ -1163,6 +1164,7 @@ public class ArenaMob {
         int childCount = 2 + world.getRandom().nextInt(2); // 2-3 children
         for (int i = 0; i < childCount; i++) {
             MobCard childCard = new MobCard(childCardId);
+            childCard.setLevel(sourceCard.getLevel()); // Inherit parent's level
             ArenaMob childMob = new ArenaMob(ownerId, team, childCard, lane, startSlotPos);
 
             double ox = (world.getRandom().nextDouble() - 0.5) * 1.5;
@@ -1330,6 +1332,82 @@ public class ArenaMob {
     private ArenaMob findMobByEntityId(List<ArenaMob> mobs, UUID eid) {
         for (ArenaMob m : mobs) if (eid.equals(m.getEntityId())) return m;
         return null;
+    }
+
+    /**
+     * Generate approach positions around a structure (especially throne) and
+     * pick the one with the fewest mobs already heading there.
+     * Returns 6 positions: 3 in front and 3 on each side of the structure.
+     */
+    private Vec3d pickStructureApproachPos(ArenaStructure struct, List<ArenaMob> allMobs) {
+        Vec3d center = Vec3d.ofCenter(struct.getPosition());
+
+        // Determine approach direction: P1 mobs attack toward +Z, P2 toward -Z
+        double frontDirZ = (team == TeamSide.PLAYER1) ? 1.0 : -1.0;
+
+        List<Vec3d> approachPoints = new ArrayList<>();
+
+        if (struct.getType() == ArenaStructure.StructureType.TOWER) {
+            // Tower is 3x3 (edge ±1 from center). Positions 2.5 blocks past edge.
+            approachPoints.add(center.add(-1.0, 0, frontDirZ * 3.5));
+            approachPoints.add(center.add(0.0, 0, frontDirZ * 3.5));
+            approachPoints.add(center.add(1.0, 0, frontDirZ * 3.5));
+        } else {
+            // Throne is 5x5 (edge ±2 from center, corner pillars at ±2).
+            // Front row: 3 blocks past the 5x5 base edge
+            approachPoints.add(center.add(-1.0, 0, frontDirZ * 5.0));
+            approachPoints.add(center.add(0.0, 0, frontDirZ * 5.0));
+            approachPoints.add(center.add(1.0, 0, frontDirZ * 5.0));
+            // Left side: 3 blocks past edge
+            approachPoints.add(center.add(-5.0, 0, frontDirZ * 1.0));
+            approachPoints.add(center.add(-5.0, 0, frontDirZ * 0.0));
+            approachPoints.add(center.add(-5.0, 0, frontDirZ * -1.0));
+            // Right side: 3 blocks past edge
+            approachPoints.add(center.add(5.0, 0, frontDirZ * 1.0));
+            approachPoints.add(center.add(5.0, 0, frontDirZ * 0.0));
+            approachPoints.add(center.add(5.0, 0, frontDirZ * -1.0));
+        }
+
+        // Count how many mobs are targeting each position
+        int[] counts = new int[approachPoints.size()];
+        for (ArenaMob m : allMobs) {
+            if (m == this || m.isDead() || m.getTeam() != team) continue;
+            if (m.structureApproachPos == null) continue;
+            for (int i = 0; i < approachPoints.size(); i++) {
+                if (m.structureApproachPos.squaredDistanceTo(approachPoints.get(i)) < 0.5) {
+                    counts[i]++;
+                    break;
+                }
+            }
+        }
+
+        // Pick the approach point with the fewest mobs
+        int bestIdx = 0;
+        int bestCount = counts[0];
+        for (int i = 1; i < counts.length; i++) {
+            if (counts[i] < bestCount) {
+                bestCount = counts[i];
+                bestIdx = i;
+            }
+        }
+        return approachPoints.get(bestIdx);
+    }
+
+    /**
+     * Assign approach position when targeting a structure.
+     */
+    private void assignStructureTarget(ArenaStructure struct, List<ArenaMob> allMobs) {
+        targetStructure = struct;
+        targetEntityId = null;
+        structureApproachPos = pickStructureApproachPos(struct, allMobs);
+    }
+
+    /**
+     * Get the position to move toward for the current structure target.
+     */
+    private Vec3d getStructureMoveTarget() {
+        if (structureApproachPos != null) return structureApproachPos;
+        return Vec3d.ofCenter(targetStructure.getPosition());
     }
 
     public Entity getEntity(ServerWorld world) {
