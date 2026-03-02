@@ -1342,30 +1342,31 @@ public class ArenaMob {
     private Vec3d pickStructureApproachPos(ArenaStructure struct, List<ArenaMob> allMobs) {
         Vec3d center = Vec3d.ofCenter(struct.getPosition());
 
-        // Determine approach direction: P1 mobs attack toward +Z, P2 toward -Z
-        double frontDirZ = (team == TeamSide.PLAYER1) ? 1.0 : -1.0;
+        // Approach direction: P1 comes from -Z, so "front" of enemy throne is the -Z face.
+        // P2 comes from +Z, so "front" of enemy throne is the +Z face.
+        double frontDirZ = (team == TeamSide.PLAYER1) ? -1.0 : 1.0;
 
         List<Vec3d> approachPoints = new ArrayList<>();
 
         if (struct.getType() == ArenaStructure.StructureType.TOWER) {
-            // Tower is 3x3 (edge ±1 from center). Positions 2.5 blocks past edge.
-            approachPoints.add(center.add(-1.0, 0, frontDirZ * 3.5));
-            approachPoints.add(center.add(0.0, 0, frontDirZ * 3.5));
-            approachPoints.add(center.add(1.0, 0, frontDirZ * 3.5));
+            // Tower is 3x3. Front positions 2 blocks ahead.
+            approachPoints.add(center.add(-1.0, 0, frontDirZ * 2.0));
+            approachPoints.add(center.add(0.0, 0, frontDirZ * 2.0));
+            approachPoints.add(center.add(1.0, 0, frontDirZ * 2.0));
         } else {
-            // Throne is 5x5 (edge ±2 from center, corner pillars at ±2).
-            // Front row: 3 blocks past the 5x5 base edge
-            approachPoints.add(center.add(-1.0, 0, frontDirZ * 5.0));
-            approachPoints.add(center.add(0.0, 0, frontDirZ * 5.0));
-            approachPoints.add(center.add(1.0, 0, frontDirZ * 5.0));
-            // Left side: 3 blocks past edge
-            approachPoints.add(center.add(-5.0, 0, frontDirZ * 1.0));
-            approachPoints.add(center.add(-5.0, 0, frontDirZ * 0.0));
-            approachPoints.add(center.add(-5.0, 0, frontDirZ * -1.0));
-            // Right side: 3 blocks past edge
-            approachPoints.add(center.add(5.0, 0, frontDirZ * 1.0));
-            approachPoints.add(center.add(5.0, 0, frontDirZ * 0.0));
-            approachPoints.add(center.add(5.0, 0, frontDirZ * -1.0));
+            // Throne is 5x5. Front 3 blocks ahead, sides 3 blocks to each side.
+            // Front row
+            approachPoints.add(center.add(-1.0, 0, frontDirZ * 3.0));
+            approachPoints.add(center.add(0.0, 0, frontDirZ * 3.0));
+            approachPoints.add(center.add(1.0, 0, frontDirZ * 3.0));
+            // Left side (spread along Z: frontDirZ * -1, 0, +1)
+            approachPoints.add(center.add(-3.0, 0, frontDirZ * -1.0));
+            approachPoints.add(center.add(-3.0, 0, 0.0));
+            approachPoints.add(center.add(-3.0, 0, frontDirZ * 1.0));
+            // Right side
+            approachPoints.add(center.add(3.0, 0, frontDirZ * -1.0));
+            approachPoints.add(center.add(3.0, 0, 0.0));
+            approachPoints.add(center.add(3.0, 0, frontDirZ * 1.0));
         }
 
         // Count how many mobs are targeting each position
