@@ -98,9 +98,9 @@ public class ArenaStructure {
     }
 
     /**
-     * Tick structure - towers shoot real arrows, throne does AoE shockwave.
+     * Tick structure - towers shoot tracked arrows, throne does AoE shockwave.
      */
-    public void tick(ServerWorld world, List<ArenaMob> enemyMobs) {
+    public void tick(ServerWorld world, List<ArenaMob> enemyMobs, ProjectileTracker projectileTracker) {
         if (isDestroyed()) return;
         if (attackCooldownRemaining > 0) { attackCooldownRemaining--; return; }
 
@@ -131,7 +131,7 @@ public class ArenaStructure {
         if (closest == null) return;
 
         if (type == StructureType.TOWER) {
-            shootArrowAtTarget(world, closest, damage);
+            shootArrowAtTarget(world, closest, damage, projectileTracker);
         } else {
             performThroneAoE(world, inRange, damage);
         }
@@ -140,9 +140,9 @@ public class ArenaStructure {
 
     /**
      * Tower shoots a real Arrow entity at the target mob.
-     * Arrow now despawns after 30 ticks instead of bouncing.
+     * Damage is now applied when the arrow reaches the target via ProjectileTracker.
      */
-    private void shootArrowAtTarget(ServerWorld world, ArenaMob target, double damage) {
+    private void shootArrowAtTarget(ServerWorld world, ArenaMob target, double damage, ProjectileTracker projectileTracker) {
         Entity targetEntity = target.getEntity(world);
         if (targetEntity == null) return;
 
@@ -153,23 +153,14 @@ public class ArenaStructure {
         ArrowEntity arrow = new ArrowEntity(world, shootFrom.x, shootFrom.y, shootFrom.z,
                 new ItemStack(Items.ARROW), null);
         arrow.setVelocity(direction.x, direction.y + 0.1, direction.z, 2.0f, 1.0f);
-        arrow.setDamage(0); // Visual only, we apply damage ourselves
+        arrow.setDamage(0); // No vanilla damage, we handle it ourselves
         arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
         arrow.setCritical(true);
         arrow.addCommandTag("arenaclash_tower_arrow");
         world.spawnEntity(arrow);
 
-        // Apply damage directly (arrow is visual only)
-        target.takeDamage(damage, world);
-
-        // Show visual damage feedback on the target mob
-        if (targetEntity instanceof LivingEntity living) {
-            living.hurtTime = 10;
-            living.maxHurtTime = 10;
-        }
-
-        // Spawn floating damage number
-        ArenaMob.spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), damage);
+        // Register with tracker — damage applied when arrow reaches target
+        projectileTracker.trackTowerArrow(arrow.getUuid(), owner, target, damage);
 
         // Muzzle flash particles
         world.spawnParticles(ParticleTypes.FLAME, shootFrom.x, shootFrom.y, shootFrom.z, 3, 0.1, 0.1, 0.1, 0.02);

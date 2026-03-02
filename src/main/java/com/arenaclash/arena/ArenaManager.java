@@ -35,6 +35,9 @@ public class ArenaManager {
     // Build zone bounds for each team
     private final Map<TeamSide, Box> buildZones = new EnumMap<>(TeamSide.class);
 
+    // Projectile tracking system: damage is applied when projectiles reach targets
+    private final ProjectileTracker projectileTracker = new ProjectileTracker();
+
     private boolean battleActive = false;
     private int battleTickCount = 0;
 
@@ -462,7 +465,7 @@ public class ArenaManager {
         // Tick all active mobs
         for (ArenaMob mob : activeMobs) {
             if (!mob.isDead()) {
-                mob.tick(arenaWorld, activeMobs, structures);
+                mob.tick(arenaWorld, activeMobs, structures, projectileTracker);
             }
         }
 
@@ -471,8 +474,11 @@ public class ArenaManager {
             List<ArenaMob> enemies = activeMobs.stream()
                     .filter(m -> m.getTeam() != structure.getOwner() && !m.isDead())
                     .toList();
-            structure.tick(arenaWorld, enemies);
+            structure.tick(arenaWorld, enemies, projectileTracker);
         }
+
+        // Tick projectile tracker: check if any projectiles reached their targets
+        projectileTracker.tick(arenaWorld, activeMobs, structures);
 
         // Refresh HP markers periodically
         if (battleTickCount % 10 == 0) {
@@ -559,6 +565,9 @@ public class ArenaManager {
      */
     public void cleanup() {
         battleActive = false;
+        // Clean up tracked projectiles
+        projectileTracker.cleanup(arenaWorld);
+
         if (arenaWorld != null) {
             for (ArenaMob mob : activeMobs) {
                 mob.removeEntity(arenaWorld);
@@ -619,6 +628,7 @@ public class ArenaManager {
     public Map<TeamSide, Integer> getTowersDestroyed() { return towersDestroyed; }
     public Map<TeamSide, Double> getTowerDamageDealt() { return towerDamageDealt; }
     public Map<TeamSide, Integer> getExperienceEarned() { return experienceEarned; }
+    public ProjectileTracker getProjectileTracker() { return projectileTracker; }
 
     public ArenaStructure getThrone(TeamSide team) {
         return structures.stream()

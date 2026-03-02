@@ -267,6 +267,17 @@ public class GameEventHandlers {
             }
 
             // Build zone enforcement for block placement
+            // If the clicked block itself is inside the player's build zone, allow interaction
+            // (e.g., opening a chest, using a workbench, interacting with a block at the edge).
+            // Only check the placement position (offset) if the player is actually placing a block.
+            if (interactData != null && gm.getPhase() == GamePhase.PREPARATION) {
+                TeamSide pTeam = interactData.getTeam();
+                if (gm.getArenaManager().isInBuildZone(pTeam, clickedPos)) {
+                    // The clicked block is in our build zone — always allow interaction
+                    return ActionResult.PASS;
+                }
+            }
+
             BlockPos placePos = clickedPos.offset(hitResult.getSide());
 
             if (!isBlockActionAllowed(serverPlayer, placePos, true)) {

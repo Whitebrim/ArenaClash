@@ -354,7 +354,7 @@ public class ArenaMob {
     // TICK
     // ================================================================
 
-    public void tick(ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+    public void tick(ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures, ProjectileTracker projectileTracker) {
         if (isDead()) return;
         Entity entity = getEntity(world);
         if (entity == null || !entity.isAlive()) { markDead(world); return; }
@@ -369,8 +369,8 @@ public class ArenaMob {
         }
 
         switch (state) {
-            case ADVANCING -> tickAdvancing(world, entity, allMobs, structures);
-            case FIGHTING -> tickFighting(world, entity, allMobs, structures);
+            case ADVANCING -> tickAdvancing(world, entity, allMobs, structures, projectileTracker);
+            case FIGHTING -> tickFighting(world, entity, allMobs, structures, projectileTracker);
             case RETREATING -> tickRetreating(world, entity, allMobs);
             default -> {}
         }
@@ -466,7 +466,7 @@ public class ArenaMob {
     // ADVANCING
     // ================================================================
 
-    private void tickAdvancing(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+    private void tickAdvancing(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures, ProjectileTracker projectileTracker) {
         GameConfig cfg = GameConfig.get();
         AttackType atkType = getEffectiveAttackType(entity);
         boolean canFight = attackDamage > 0 || atkType == AttackType.CREEPER_EXPLOSION;
@@ -522,7 +522,7 @@ public class ArenaMob {
     // FIGHTING
     // ================================================================
 
-    private void tickFighting(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+    private void tickFighting(ServerWorld world, Entity entity, List<ArenaMob> allMobs, List<ArenaStructure> structures, ProjectileTracker projectileTracker) {
         AttackType atkType = getEffectiveAttackType(entity);
         double meleeRange = 2.5;
         double rangedRange = getRangedAttackRange();
@@ -541,7 +541,7 @@ public class ArenaMob {
                 case RANGED -> {
                     if (dist > rangedRange) moveToward(entity, tEnt.getPos());
                     else if (attackCooldownRemaining <= 0) {
-                        performRangedAttack(entity, target, world);
+                        performRangedAttack(entity, target, world, projectileTracker);
                         attackCooldownRemaining = getRandomizedCooldown();
                     }
                 }
@@ -585,13 +585,13 @@ public class ArenaMob {
             } else if (atkType == AttackType.RANGED) {
                 if (dist > Math.min(rangedRange, 8.0)) moveToward(entity, sPos);
                 else if (attackCooldownRemaining <= 0) {
-                    performStructureAttack(entity, targetStructure, world);
+                    performStructureAttack(entity, targetStructure, world, projectileTracker);
                     attackCooldownRemaining = getRandomizedCooldown();
                 }
             } else {
                 if (dist > meleeRange + 2.5) moveToward(entity, sPos);
                 else if (attackCooldownRemaining <= 0) {
-                    performStructureAttack(entity, targetStructure, world);
+                    performStructureAttack(entity, targetStructure, world, projectileTracker);
                     attackCooldownRemaining = getRandomizedCooldown();
                 }
             }
@@ -693,7 +693,7 @@ public class ArenaMob {
     // COMBAT - RANGED (proper projectile entities)
     // ================================================================
 
-    private void performRangedAttack(Entity attacker, ArenaMob defender, ServerWorld world) {
+    private void performRangedAttack(Entity attacker, ArenaMob defender, ServerWorld world, ProjectileTracker tracker) {
         if (defender.isDead()) return;
         Entity targetEntity = defender.getEntity(world);
         if (targetEntity == null) return;
@@ -705,9 +705,10 @@ public class ArenaMob {
         Vec3d targetPos = targetEntity.getPos().add(0, targetEntity.getHeight() * 0.5, 0);
         Vec3d direction = targetPos.subtract(shootFrom).normalize();
 
+        float dmg = (float) attackDamage;
+
         switch (mobId) {
             case "skeleton", "stray", "bogged" -> {
-                // Real arrow projectile
                 ArrowEntity arrow = new ArrowEntity(world, shootFrom.x, shootFrom.y, shootFrom.z,
                         new ItemStack(Items.ARROW), null);
                 arrow.setVelocity(direction.x, direction.y + 0.05, direction.z, 1.6f, 2.0f);
@@ -715,6 +716,8 @@ public class ArenaMob {
                 arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
                 arrow.addCommandTag("arenaclash_mob_projectile");
                 world.spawnEntity(arrow);
+                tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                        ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_SKELETON_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "pillager" -> {
@@ -725,10 +728,11 @@ public class ArenaMob {
                 arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
                 arrow.addCommandTag("arenaclash_mob_projectile");
                 world.spawnEntity(arrow);
+                tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                        ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ITEM_CROSSBOW_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "blaze" -> {
-                // Real small fireball
                 try {
                     SmallFireballEntity fb = new SmallFireballEntity(world,
                             attacker instanceof LivingEntity le ? le : null,
@@ -736,13 +740,17 @@ public class ArenaMob {
                     fb.setPosition(shootFrom);
                     fb.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(fb);
+                    tracker.trackMobProjectile(fb.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.BLAZE_FIRE, 2.5, 0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.BLAZE_FIRE, 2.0, 0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_BLAZE_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "ghast" -> {
-                // Real fireball
+                // Ghast fireball: tracked with AOE explosion on impact
                 try {
                     FireballEntity fb = new FireballEntity(world,
                             attacker instanceof LivingEntity le ? le : null,
@@ -750,23 +758,28 @@ public class ArenaMob {
                     fb.setPosition(shootFrom);
                     fb.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(fb);
+                    tracker.trackMobProjectile(fb.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.GHAST_AOE, 3.0, 4.0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.GHAST_AOE, 2.5, 4.0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_GHAST_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "witch" -> {
-                // Snowball proxy for potion
                 try {
                     SnowballEntity sb = new SnowballEntity(world, shootFrom.x, shootFrom.y, shootFrom.z);
                     sb.setVelocity(direction.x, direction.y + 0.2, direction.z, 0.75f, 4.0f);
                     sb.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(sb);
+                    tracker.trackMobProjectile(sb.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
-                world.spawnParticles(ParticleTypes.SPLASH, targetEntity.getX(),
-                        targetEntity.getBodyY(0.5), targetEntity.getZ(), 10, 0.3, 0.3, 0.3, 0.1);
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_WITCH_THROW, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "snow_golem" -> {
@@ -775,13 +788,17 @@ public class ArenaMob {
                     sb.setVelocity(direction.x, direction.y + 0.1, direction.z, 1.2f, 3.0f);
                     sb.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(sb);
+                    tracker.trackMobProjectile(sb.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_SNOW_GOLEM_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "guardian", "elder_guardian" -> {
-                // Laser beam — particle line (no entity in vanilla for guardian laser)
+                // Guardian laser beam — instant damage (particle effect, no projectile entity)
                 int steps = 10;
                 for (int i = 0; i < steps; i++) {
                     double t = (double) i / steps;
@@ -796,21 +813,28 @@ public class ArenaMob {
                 }
                 var snd = "elder_guardian".equals(mobId) ? SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE : SoundEvents.ENTITY_GUARDIAN_ATTACK;
                 world.playSound(null, attacker.getBlockPos(), snd, SoundCategory.HOSTILE, 1.0f, 1.0f);
+                // Instant damage — no projectile entity to track
+                defender.takeDamage(dmg, world);
+                spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), dmg);
+                if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
             }
             case "llama", "trader_llama" -> {
-                // Llama spit — snowball proxy
                 try {
                     SnowballEntity spit = new SnowballEntity(world, shootFrom.x, shootFrom.y, shootFrom.z);
                     spit.setVelocity(direction.x, direction.y + 0.1, direction.z, 1.0f, 5.0f);
                     spit.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(spit);
+                    tracker.trackMobProjectile(spit.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_LLAMA_SPIT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
             case "breeze" -> {
-                // Wind charge particles (no WindChargeEntity in 1.21.1 public API)
+                // Wind charge — instant damage (particle effect, no projectile entity)
                 for (int i = 0; i < 6; i++) {
                     double t = (double) i / 6;
                     double px = shootFrom.x + direction.x * t * 8;
@@ -820,9 +844,12 @@ public class ArenaMob {
                     world.spawnParticles(ParticleTypes.POOF, px, py, pz, 1, 0.1, 0.1, 0.1, 0.02);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_BREEZE_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
+                defender.takeDamage(dmg, world);
+                spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), dmg);
+                if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
             }
             case "warden" -> {
-                // Sonic boom — particle beam
+                // Sonic boom — instant damage (particle beam, no projectile entity)
                 int steps = 12;
                 for (int i = 0; i < steps; i++) {
                     double t = (double) i / steps;
@@ -832,9 +859,11 @@ public class ArenaMob {
                     world.spawnParticles(ParticleTypes.SONIC_BOOM, px, py, pz, 1, 0, 0, 0, 0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.HOSTILE, 1.5f, 1.0f);
+                defender.takeDamage(dmg, world);
+                spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), dmg);
+                if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
             }
             case "wither" -> {
-                // Real wither skull
                 try {
                     WitherSkullEntity skull = new WitherSkullEntity(world,
                             attacker instanceof LivingEntity le ? le : null,
@@ -842,13 +871,14 @@ public class ArenaMob {
                     skull.setPosition(shootFrom);
                     skull.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(skull);
+                    tracker.trackMobProjectile(skull.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.WITHER_EFFECT, 2.5, 0);
                 } catch (Exception ignored) {
-                    spawnVisualArrow(world, shootFrom, direction);
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                            ProjectileTracker.HitEffect.WITHER_EFFECT, 2.0, 0);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_WITHER_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
-                if (targetEntity instanceof LivingEntity lt) {
-                    lt.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1));
-                }
             }
             default -> {
                 // Fallback: arrow
@@ -859,22 +889,15 @@ public class ArenaMob {
                 arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
                 arrow.addCommandTag("arenaclash_mob_projectile");
                 world.spawnEntity(arrow);
+                tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
+                        ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_ARROW_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
         }
-
-        // Apply damage directly (projectile is visual only)
-        float dmg = (float) attackDamage;
-        defender.takeDamage(dmg, world);
-        spawnDamageNumber(world, targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), dmg);
-        if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.maxHurtTime = 10; }
-
-        // Blaze DOT
-        if ("blaze".equals(mobId)) targetEntity.setOnFireFor(3);
     }
 
-    /** Spawn a short-lived visual arrow as fallback for ranged attacks */
-    private void spawnVisualArrow(ServerWorld world, Vec3d from, Vec3d dir) {
+    /** Spawn a short-lived visual arrow as fallback for ranged attacks. Returns the entity for tracking. */
+    private ArrowEntity spawnVisualArrow(ServerWorld world, Vec3d from, Vec3d dir) {
         ArrowEntity arrow = new ArrowEntity(world, from.x, from.y, from.z,
                 new ItemStack(Items.ARROW), null);
         arrow.setVelocity(dir.x, dir.y + 0.05, dir.z, 1.6f, 2.0f);
@@ -882,6 +905,7 @@ public class ArenaMob {
         arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
         arrow.addCommandTag("arenaclash_mob_projectile");
         world.spawnEntity(arrow);
+        return arrow;
     }
 
     // ================================================================
@@ -1048,18 +1072,140 @@ public class ArenaMob {
     // COMBAT - STRUCTURE ATTACK
     // ================================================================
 
-    private void performStructureAttack(Entity attacker, ArenaStructure structure, ServerWorld world) {
+    private void performStructureAttack(Entity attacker, ArenaStructure structure, ServerWorld world, ProjectileTracker tracker) {
         if (structure.isDestroyed() || attackDamage <= 0) return;
         triggerAttackAnimation(attacker, world);
 
         float dmg = (float) attackDamage;
-        structure.damage(dmg, world);
+        AttackType atkType = getEffectiveAttackType(attacker);
 
-        Vec3d sp = Vec3d.ofCenter(structure.getPosition()).add(0, 1, 0);
-        world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
-        world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
-        world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
-        spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
+        if (atkType == AttackType.RANGED) {
+            // Ranged mobs: fire a tracked projectile at the structure
+            String mobId = sourceCard.getMobId();
+            Vec3d shootFrom = attacker.getPos().add(0, attacker.getHeight() * 0.7, 0);
+            Vec3d targetPos = Vec3d.ofCenter(structure.getPosition()).add(0, 2, 0);
+            Vec3d direction = targetPos.subtract(shootFrom).normalize();
+
+            ProjectileTracker.HitEffect effect = switch (mobId) {
+                case "blaze" -> ProjectileTracker.HitEffect.BLAZE_FIRE;
+                case "ghast" -> ProjectileTracker.HitEffect.GHAST_AOE;
+                case "wither" -> ProjectileTracker.HitEffect.WITHER_EFFECT;
+                default -> ProjectileTracker.HitEffect.NONE;
+            };
+
+            // Instant beam/effect attacks — no projectile to track
+            if (isInstantRanged(mobId)) {
+                structure.damage(dmg, world);
+                Vec3d sp = Vec3d.ofCenter(structure.getPosition()).add(0, 1, 0);
+                world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
+                world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
+                spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
+                playRangedSound(mobId, attacker, world);
+                return;
+            }
+
+            // Fire a projectile entity and track it
+            UUID projId = fireStructureProjectile(world, attacker, shootFrom, direction, mobId);
+            if (projId != null) {
+                double hitRadius = "ghast".equals(mobId) ? 3.0 : 2.5;
+                tracker.trackStructureProjectile(projId, team, structure, dmg, effect, hitRadius);
+            } else {
+                // Fallback: instant damage if projectile spawn failed
+                structure.damage(dmg, world);
+                Vec3d sp = Vec3d.ofCenter(structure.getPosition()).add(0, 1, 0);
+                spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
+            }
+            playRangedSound(mobId, attacker, world);
+        } else {
+            // Melee attack on structure: instant damage
+            structure.damage(dmg, world);
+
+            Vec3d sp = Vec3d.ofCenter(structure.getPosition()).add(0, 1, 0);
+            world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
+            world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
+            world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.HOSTILE, 1.0f, 0.7f);
+            spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
+        }
+    }
+
+    /** Check if this ranged mob uses an instant beam/effect with no projectile entity */
+    private boolean isInstantRanged(String mobId) {
+        return switch (mobId) {
+            case "guardian", "elder_guardian", "warden", "breeze" -> true;
+            default -> false;
+        };
+    }
+
+    /** Fire a projectile entity toward a structure and return its UUID */
+    private UUID fireStructureProjectile(ServerWorld world, Entity attacker, Vec3d shootFrom, Vec3d direction, String mobId) {
+        try {
+            return switch (mobId) {
+                case "skeleton", "stray", "bogged", "pillager" -> {
+                    ArrowEntity arrow = new ArrowEntity(world, shootFrom.x, shootFrom.y, shootFrom.z,
+                            new ItemStack(Items.ARROW), null);
+                    arrow.setVelocity(direction.x, direction.y + 0.05, direction.z, 1.6f, 2.0f);
+                    arrow.setDamage(0);
+                    arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
+                    arrow.addCommandTag("arenaclash_mob_projectile");
+                    world.spawnEntity(arrow);
+                    yield arrow.getUuid();
+                }
+                case "blaze" -> {
+                    SmallFireballEntity fb = new SmallFireballEntity(world,
+                            attacker instanceof LivingEntity le ? le : null,
+                            direction.multiply(0.8));
+                    fb.setPosition(shootFrom);
+                    fb.addCommandTag("arenaclash_mob_projectile");
+                    world.spawnEntity(fb);
+                    yield fb.getUuid();
+                }
+                case "ghast" -> {
+                    FireballEntity fb = new FireballEntity(world,
+                            attacker instanceof LivingEntity le ? le : null,
+                            direction.multiply(0.5), 0);
+                    fb.setPosition(shootFrom);
+                    fb.addCommandTag("arenaclash_mob_projectile");
+                    world.spawnEntity(fb);
+                    yield fb.getUuid();
+                }
+                case "wither" -> {
+                    WitherSkullEntity skull = new WitherSkullEntity(world,
+                            attacker instanceof LivingEntity le ? le : null,
+                            direction.multiply(0.6));
+                    skull.setPosition(shootFrom);
+                    skull.addCommandTag("arenaclash_mob_projectile");
+                    world.spawnEntity(skull);
+                    yield skull.getUuid();
+                }
+                default -> {
+                    ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+                    yield arrow.getUuid();
+                }
+            };
+        } catch (Exception e) {
+            ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
+            return arrow.getUuid();
+        }
+    }
+
+    /** Play the ranged attack sound for a mob type */
+    private void playRangedSound(String mobId, Entity attacker, ServerWorld world) {
+        var sound = switch (mobId) {
+            case "skeleton", "stray", "bogged" -> SoundEvents.ENTITY_SKELETON_SHOOT;
+            case "pillager" -> SoundEvents.ITEM_CROSSBOW_SHOOT;
+            case "blaze" -> SoundEvents.ENTITY_BLAZE_SHOOT;
+            case "ghast" -> SoundEvents.ENTITY_GHAST_SHOOT;
+            case "witch" -> SoundEvents.ENTITY_WITCH_THROW;
+            case "snow_golem" -> SoundEvents.ENTITY_SNOW_GOLEM_SHOOT;
+            case "warden" -> SoundEvents.ENTITY_WARDEN_SONIC_BOOM;
+            case "wither" -> SoundEvents.ENTITY_WITHER_SHOOT;
+            case "breeze" -> SoundEvents.ENTITY_BREEZE_SHOOT;
+            case "llama", "trader_llama" -> SoundEvents.ENTITY_LLAMA_SPIT;
+            case "guardian" -> SoundEvents.ENTITY_GUARDIAN_ATTACK;
+            case "elder_guardian" -> SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE;
+            default -> SoundEvents.ENTITY_ARROW_SHOOT;
+        };
+        world.playSound(null, attacker.getBlockPos(), sound, SoundCategory.HOSTILE, 1.0f, 1.0f);
     }
 
     /**
