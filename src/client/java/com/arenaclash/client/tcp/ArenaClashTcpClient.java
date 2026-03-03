@@ -264,10 +264,39 @@ public class ArenaClashTcpClient {
             }
 
             case SyncProtocol.S2C_CHAT_RELAY -> {
-                // Chat relay from another player
+                // Chat relay from another player — vanilla-style <Player> message format
                 String sender = msg.get("sender").getAsString();
                 String chatMessage = msg.get("message").getAsString();
                 ArenaClashClient.onChatRelayFromTcp(sender, chatMessage);
+            }
+
+            case SyncProtocol.S2C_OPPONENT_STATE -> {
+                // Opponent position/equipment for the ghost ArmorStand marker
+                String opName = msg.get("name").getAsString();
+                double ox = msg.get("x").getAsDouble();
+                double oy = msg.get("y").getAsDouble();
+                double oz = msg.get("z").getAsDouble();
+                float oYaw = msg.get("yaw").getAsFloat();
+                float oPitch = msg.get("pitch").getAsFloat();
+                String oDim = msg.has("dim") ? msg.get("dim").getAsString() : "minecraft:overworld";
+                String equipment = msg.has("equipment") ? msg.get("equipment").getAsString() : null;
+                ArenaClashClient.onOpponentStateFromTcp(opName, ox, oy, oz, oYaw, oPitch, oDim, equipment);
+            }
+
+            case SyncProtocol.S2C_OPPONENT_CARD_OBTAINED -> {
+                // Opponent obtained a card — display notification
+                String opSender = msg.get("sender").getAsString();
+                String mobKey = msg.get("mobKey").getAsString();
+                int cardCount = msg.get("count").getAsInt();
+                boolean bonus = msg.get("bonus").getAsBoolean();
+                ArenaClashClient.onOpponentCardObtainedFromTcp(opSender, mobKey, cardCount, bonus);
+            }
+
+            case SyncProtocol.S2C_BROADCAST_RELAY -> {
+                // System broadcast from opponent (achievements, deaths)
+                String brSender = msg.get("sender").getAsString();
+                String brText = msg.get("text").getAsString();
+                ArenaClashClient.onBroadcastRelayFromTcp(brSender, brText);
             }
 
             case SyncProtocol.S2C_GAME_SEED -> {
@@ -347,5 +376,13 @@ public class ArenaClashTcpClient {
 
     public void sendMergeCards(String cardId1, String cardId2) {
         send(SyncProtocol.mergeCards(cardId1, cardId2));
+    }
+
+    public void sendPlayerState(double x, double y, double z, float yaw, float pitch, String dimension, String equipmentSnbt) {
+        send(SyncProtocol.playerState(x, y, z, yaw, pitch, dimension, equipmentSnbt));
+    }
+
+    public void sendBroadcast(String message) {
+        send(SyncProtocol.broadcastMessage(message));
     }
 }

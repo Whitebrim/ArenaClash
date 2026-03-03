@@ -1,31 +1,43 @@
 package com.arenaclash.mixin;
 
 import com.arenaclash.tcp.SingleplayerBridge;
-import net.minecraft.network.message.SignedMessage;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.PlayerManager;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Intercept chat messages and broadcast-type messages in singleplayer
- * to forward them to the opponent via TCP.
+ * Intercept broadcast messages (achievements, deaths, join/leave) in singleplayer
+ * and forward them to the opponent via TCP as BROADCAST.
+ *
+ * We serialize the full Text component as JSON so that the opponent's client
+ * can reconstruct it with all vanilla formatting intact — colours, hover events
+ * on advancement names, entity references, etc.
  */
 @Mixin(PlayerManager.class)
-public class PlayerManagerMixin {
+public abstract class PlayerManagerMixin {
 
-    /**
-     * Intercept broadcast messages (death, achievements, join/leave).
-     */
+    @Shadow @Final private MinecraftServer server;
+
     @Inject(method = "broadcast(Lnet/minecraft/text/Text;Z)V", at = @At("HEAD"))
     private void arenaclash$interceptBroadcast(Text message, boolean overlay, CallbackInfo ci) {
-        if (!overlay) {
-            String text = message.getString();
-            if (text != null && !text.isEmpty()) {
-                SingleplayerBridge.pendingChatMessages.add(text);
+        if (!overlay && SingleplayerBridge.survivalPhaseActive) {
+            try {
+                // Serialize the full styled Text as JSON — preserves colours,
+                // hover events, click events, translatable components, etc.
+                String jsonText = Text.Serialization.toJsonString(message, server.getRegistryManager());
+                SingleplayerBridge.pendingBroadcasts.add(jsonText);
+            } catch (Exception e) {
+                // Fallback: plain text (loses formatting but still delivers the message)
+                String plain = message.getString();
+                if (plain != null && !plain.isEmpty()) {
+                    SingleplayerBridge.pendingBroadcasts.add(plain);
+                }
             }
         }
     }

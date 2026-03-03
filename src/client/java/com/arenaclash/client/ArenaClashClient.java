@@ -4,6 +4,7 @@ import com.arenaclash.client.gui.CardScreen;
 import com.arenaclash.client.gui.CardUpgradeScreen;
 import com.arenaclash.client.gui.DeploymentScreen;
 import com.arenaclash.client.render.GameHudRenderer;
+import com.arenaclash.client.survival.OpponentMarkerManager;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
 import com.arenaclash.client.world.WorldCreationHelper;
 import com.arenaclash.network.NetworkHandler;
@@ -75,6 +76,11 @@ public class ArenaClashClient implements ClientModInitializer {
 
     // Client pause state tracking (for auto-pause)
     private static boolean lastPauseState = false;
+
+    // Player state sync tick counter (send every 4 ticks to reduce bandwidth)
+    private static int playerStateTicks = 0;
+    // Last sent equipment SNBT to avoid resending unchanged data
+    private static String lastEquipmentSnbt = null;
 
     // Config file for persistent IP address 
     private static final String CONFIG_FILE = "arenaclash_client.txt";
@@ -159,7 +165,12 @@ public class ArenaClashClient implements ClientModInitializer {
         if (tcpClient != null && tcpClient.isConnected()) {
             String mobId;
             while ((mobId = com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.poll()) != null) {
-                tcpClient.sendCardObtained(mobId);
+                if (mobId.startsWith(com.arenaclash.tcp.SingleplayerBridge.BONUS_PREFIX)) {
+                    String actualMobId = mobId.substring(com.arenaclash.tcp.SingleplayerBridge.BONUS_PREFIX.length());
+                    tcpClient.send(SyncProtocol.cardObtainedBonus(actualMobId));
+                } else {
+                    tcpClient.sendCardObtained(mobId);
+                }
             }
         }
 
@@ -169,6 +180,33 @@ public class ArenaClashClient implements ClientModInitializer {
             while ((chatMsg = com.arenaclash.tcp.SingleplayerBridge.pendingChatMessages.poll()) != null) {
                 tcpClient.sendChat(chatMsg);
             }
+        }
+
+        // Forward singleplayer broadcasts (achievements, deaths) via TCP
+        if (tcpClient != null && tcpClient.isConnected()) {
+            String broadcast;
+            while ((broadcast = com.arenaclash.tcp.SingleplayerBridge.pendingBroadcasts.poll()) != null) {
+                tcpClient.sendBroadcast(broadcast);
+            }
+        }
+
+        // Send player state to opponent during survival phase (every 4 ticks)
+        if (tcpClient != null && tcpClient.isConnected()
+                && "SURVIVAL".equals(currentPhase)
+                && client.player != null && client.isInSingleplayer()) {
+            playerStateTicks++;
+            if (playerStateTicks >= 4) {
+                playerStateTicks = 0;
+                sendPlayerState(client);
+            }
+        }
+
+        // Tick opponent marker during survival phase
+        if ("SURVIVAL".equals(currentPhase) && client.world != null) {
+            OpponentMarkerManager.tick();
+        } else {
+            // Remove marker when not in survival
+            OpponentMarkerManager.remove();
         }
 
         // Handle scheduled MC server connect
@@ -286,6 +324,96 @@ public class ArenaClashClient implements ClientModInitializer {
                     && cardInventoryData != null) {
                 client.setScreen(new CardScreen(cardInventoryData));
             }
+        }
+    }
+
+    // =========================================================================
+    // PLAYER STATE SYNC (OPPONENT MARKER)
+    // =========================================================================
+
+    /**
+     * Collect and send player's current position + equipment to opponent via TCP.
+     */
+    private static void sendPlayerState(MinecraftClient client) {
+        if (client.player == null || client.world == null || tcpClient == null) return;
+
+        double x = client.player.getX();
+        double y = client.player.getY();
+        double z = client.player.getZ();
+        float yaw = client.player.getYaw();
+        float pitch = client.player.getPitch();
+        String dimension = client.world.getRegistryKey().getValue().toString();
+
+        // Build equipment SNBT
+        String equipmentSnbt = buildEquipmentSnbt(client);
+
+        // Only send equipment if it changed
+        String eqToSend = null;
+        if (!java.util.Objects.equals(equipmentSnbt, lastEquipmentSnbt)) {
+            lastEquipmentSnbt = equipmentSnbt;
+            eqToSend = equipmentSnbt;
+        }
+
+        tcpClient.sendPlayerState(x, y, z, yaw, pitch, dimension, eqToSend);
+    }
+
+    /**
+     * Build an SNBT string representing the player's current equipment.
+     */
+    private static String buildEquipmentSnbt(MinecraftClient client) {
+        if (client.player == null) return "{}";
+        try {
+            net.minecraft.nbt.NbtCompound eq = new net.minecraft.nbt.NbtCompound();
+            var registryOps = client.world.getRegistryManager().getOps(net.minecraft.nbt.NbtOps.INSTANCE);
+
+            // Main hand
+            net.minecraft.item.ItemStack mainHand = client.player.getMainHandStack();
+            if (mainHand != null && !mainHand.isEmpty()) {
+                eq.putString("MainHand", encodeItemStack(mainHand, registryOps));
+            }
+
+            // Off hand
+            net.minecraft.item.ItemStack offHand = client.player.getOffHandStack();
+            if (offHand != null && !offHand.isEmpty()) {
+                eq.putString("OffHand", encodeItemStack(offHand, registryOps));
+            }
+
+            // Armor slots
+            net.minecraft.item.ItemStack helmet = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.HEAD);
+            if (helmet != null && !helmet.isEmpty()) {
+                eq.putString("Helmet", encodeItemStack(helmet, registryOps));
+            }
+
+            net.minecraft.item.ItemStack chest = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST);
+            if (chest != null && !chest.isEmpty()) {
+                eq.putString("Chestplate", encodeItemStack(chest, registryOps));
+            }
+
+            net.minecraft.item.ItemStack legs = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.LEGS);
+            if (legs != null && !legs.isEmpty()) {
+                eq.putString("Leggings", encodeItemStack(legs, registryOps));
+            }
+
+            net.minecraft.item.ItemStack boots = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.FEET);
+            if (boots != null && !boots.isEmpty()) {
+                eq.putString("Boots", encodeItemStack(boots, registryOps));
+            }
+
+            return eq.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private static String encodeItemStack(net.minecraft.item.ItemStack stack,
+                                           com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops) {
+        try {
+            return net.minecraft.item.ItemStack.CODEC.encodeStart(ops, stack)
+                    .resultOrPartial(err -> {})
+                    .map(Object::toString)
+                    .orElse("{}");
+        } catch (Exception e) {
+            return "{}";
         }
     }
 
@@ -480,6 +608,10 @@ public class ArenaClashClient implements ClientModInitializer {
         timerTicks = 0;
         currentRound = 0;
         lastGameSessionId = null;
+        lastEquipmentSnbt = null;
+
+        // Remove opponent marker
+        OpponentMarkerManager.remove();
 
         // Disconnect TCP so Continue button disappears on title screen
         if (tcpClient != null) {
@@ -522,11 +654,67 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
-    /** Chat relay from other player . */
+    /** Chat relay from other player — formatted identically to vanilla multiplayer chat. */
     public static void onChatRelayFromTcp(String sender, String message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
-            client.player.sendMessage(Text.translatable("arenaclash.msg.chat_format", sender, message));
+            // "chat.type.text" is the vanilla key: <%s> %s → <PlayerName> message
+            // Using it gives EXACT vanilla formatting including hover events.
+            Text formatted = Text.translatable("chat.type.text",
+                    Text.literal(sender), Text.literal(message));
+            client.player.sendMessage(formatted);
+        }
+    }
+
+    /** Opponent state update — update ghost ArmorStand marker. */
+    public static void onOpponentStateFromTcp(String name, double x, double y, double z,
+                                                float yaw, float pitch, String dimension,
+                                                String equipmentSnbt) {
+        OpponentMarkerManager.onOpponentState(name, x, y, z, yaw, pitch, dimension, equipmentSnbt);
+    }
+
+    /** Opponent obtained a card — display colored notification in chat. */
+    public static void onOpponentCardObtainedFromTcp(String sender, String mobTranslationKey, int count, boolean isBonus) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            String mobName = net.minecraft.client.resource.language.I18n.translate(mobTranslationKey);
+
+            // §d (light purple) for opponent card notifications
+            Text msg;
+            if (isBonus) {
+                msg = Text.translatable("arenaclash.msg.opponent_card_bonus", sender, mobName, String.valueOf(count));
+            } else {
+                msg = Text.translatable("arenaclash.msg.opponent_card", sender, mobName, String.valueOf(count));
+            }
+            client.player.sendMessage(msg);
+        }
+    }
+
+    /**
+     * Broadcast relay from opponent (achievements, deaths).
+     * The text is JSON-serialized by Text.Serialization on the sender's integrated
+     * server, preserving all vanilla formatting: colours, hover events on advancement
+     * names, translatable components, etc.
+     */
+    public static void onBroadcastRelayFromTcp(String sender, String broadcastJson) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            Text formatted = null;
+            // Try to deserialize full JSON Text (preserves formatting)
+            if (client.world != null) {
+                try {
+                    formatted = Text.Serialization.fromJson(broadcastJson, client.world.getRegistryManager());
+                } catch (Exception e) {
+                    // Fallback below
+                }
+            }
+            if (formatted != null) {
+                client.player.sendMessage(formatted);
+            } else {
+                // Fallback: display as yellow system message
+                client.player.sendMessage(Text.literal(broadcastJson)
+                        .styled(s -> s.withColor(net.minecraft.util.Formatting.YELLOW)));
+            }
         }
     }
 

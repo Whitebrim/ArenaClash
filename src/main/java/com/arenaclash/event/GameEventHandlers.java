@@ -130,7 +130,8 @@ public class GameEventHandlers {
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
                     // Message with card count is sent by the TCP server after CARD_OBTAINED
                     if (bonusCard) {
-                        com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
+                        com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(
+                                com.arenaclash.tcp.SingleplayerBridge.BONUS_PREFIX + finalCardId);
                     }
                 } else {
                     GameManager gm = GameManager.getInstance();
@@ -170,7 +171,8 @@ public class GameEventHandlers {
             // Check if the entity is an arena entity - ALWAYS protect regardless of player status
             if (entity.getCommandTags().contains("arenaclash_mob")
                     || entity.getCommandTags().contains("arenaclash_structure")
-                    || entity.getCommandTags().contains("arenaclash_marker")) {
+                    || entity.getCommandTags().contains("arenaclash_marker")
+                    || entity.getCommandTags().contains("arenaclash_opponent_marker")) {
                 serverPlayer.sendMessage(Text.translatable("arenaclash.msg.arena_no_attack"), true);
                 return ActionResult.FAIL;
             }

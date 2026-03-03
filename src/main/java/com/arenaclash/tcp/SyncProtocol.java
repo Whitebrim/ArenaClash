@@ -36,6 +36,9 @@ public class SyncProtocol {
     public static final String S2C_GAME_SEED = "GAME_SEED";
     public static final String S2C_RECONNECT_STATE = "RECONNECT_STATE";
     public static final String S2C_INVENTORY_SYNC = "S2C_INVENTORY_SYNC";
+    public static final String S2C_OPPONENT_STATE = "OPPONENT_STATE";
+    public static final String S2C_OPPONENT_CARD_OBTAINED = "OPPONENT_CARD_OBTAINED";
+    public static final String S2C_BROADCAST_RELAY = "BROADCAST_RELAY";
 
     // === C2S Message Types ===
     public static final String C2S_AUTH = "AUTH";
@@ -49,6 +52,8 @@ public class SyncProtocol {
     public static final String C2S_WORLD_READY = "WORLD_READY";
     public static final String C2S_PAUSE_STATE = "PAUSE_STATE";
     public static final String C2S_MERGE_CARDS = "MERGE_CARDS";
+    public static final String C2S_PLAYER_STATE = "PLAYER_STATE";
+    public static final String C2S_BROADCAST = "BROADCAST";
 
     // === IO Helpers ===
 
@@ -200,6 +205,14 @@ public class SyncProtocol {
     public static JsonObject cardObtained(String mobId) {
         JsonObject msg = makeMessage(C2S_CARD_OBTAINED);
         msg.addProperty("mobId", mobId);
+        msg.addProperty("bonus", false);
+        return msg;
+    }
+
+    public static JsonObject cardObtainedBonus(String mobId) {
+        JsonObject msg = makeMessage(C2S_CARD_OBTAINED);
+        msg.addProperty("mobId", mobId);
+        msg.addProperty("bonus", true);
         return msg;
     }
 
@@ -273,6 +286,55 @@ public class SyncProtocol {
         JsonObject msg = makeMessage(C2S_MERGE_CARDS);
         msg.addProperty("cardId1", cardId1);
         msg.addProperty("cardId2", cardId2);
+        return msg;
+    }
+
+    // === Player state sync (opponent marker) ===
+
+    public static JsonObject playerState(double x, double y, double z, float yaw, float pitch, String dimension, String equipmentSnbt) {
+        JsonObject msg = makeMessage(C2S_PLAYER_STATE);
+        msg.addProperty("x", x);
+        msg.addProperty("y", y);
+        msg.addProperty("z", z);
+        msg.addProperty("yaw", yaw);
+        msg.addProperty("pitch", pitch);
+        msg.addProperty("dim", dimension);
+        if (equipmentSnbt != null) msg.addProperty("equipment", equipmentSnbt);
+        return msg;
+    }
+
+    public static JsonObject opponentState(String name, double x, double y, double z, float yaw, float pitch, String dimension, String equipmentSnbt) {
+        JsonObject msg = makeMessage(S2C_OPPONENT_STATE);
+        msg.addProperty("name", name);
+        msg.addProperty("x", x);
+        msg.addProperty("y", y);
+        msg.addProperty("z", z);
+        msg.addProperty("yaw", yaw);
+        msg.addProperty("pitch", pitch);
+        msg.addProperty("dim", dimension);
+        if (equipmentSnbt != null) msg.addProperty("equipment", equipmentSnbt);
+        return msg;
+    }
+
+    public static JsonObject opponentCardObtained(String senderName, String mobTranslationKey, int count, boolean isBonus) {
+        JsonObject msg = makeMessage(S2C_OPPONENT_CARD_OBTAINED);
+        msg.addProperty("sender", senderName);
+        msg.addProperty("mobKey", mobTranslationKey);
+        msg.addProperty("count", count);
+        msg.addProperty("bonus", isBonus);
+        return msg;
+    }
+
+    public static JsonObject broadcastRelay(String senderName, String broadcastText) {
+        JsonObject msg = makeMessage(S2C_BROADCAST_RELAY);
+        msg.addProperty("sender", senderName);
+        msg.addProperty("text", broadcastText);
+        return msg;
+    }
+
+    public static JsonObject broadcastMessage(String message) {
+        JsonObject msg = makeMessage(C2S_BROADCAST);
+        msg.addProperty("message", message);
         return msg;
     }
 }

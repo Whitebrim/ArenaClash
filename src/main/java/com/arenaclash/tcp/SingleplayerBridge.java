@@ -15,14 +15,23 @@ public class SingleplayerBridge {
     /**
      * Mob IDs killed by the player in singleplayer.
      * Polled by the client tick handler and sent via TCP.
+     * Entries prefixed with "BONUS:" indicate bonus cards from Looting enchantment.
      */
     public static final ConcurrentLinkedQueue<String> pendingMobKills = new ConcurrentLinkedQueue<>();
 
+    public static final String BONUS_PREFIX = "BONUS:";
+
     /**
      * Chat messages from singleplayer to forward via TCP.
-     * Includes player messages, death messages, and achievement messages.
+     * Only player-typed chat messages (not broadcasts/achievements).
      */
     public static final ConcurrentLinkedQueue<String> pendingChatMessages = new ConcurrentLinkedQueue<>();
+
+    /**
+     * System broadcast messages (achievements, deaths) to forward via TCP.
+     * Sent as C2S_BROADCAST, displayed differently from regular chat.
+     */
+    public static final ConcurrentLinkedQueue<String> pendingBroadcasts = new ConcurrentLinkedQueue<>();
 
     /**
      * Set to true when the player is in an ArenaClash survival phase in singleplayer.

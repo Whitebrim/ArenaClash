@@ -214,14 +214,24 @@ public class ArenaClashTcpServer {
         switch (type) {
             case SyncProtocol.C2S_CARD_OBTAINED -> {
                 String mobId = msg.get("mobId").getAsString();
+                boolean isBonus = msg.has("bonus") && msg.get("bonus").getAsBoolean();
                 var def = MobCardRegistry.getById(mobId);
                 if (def != null) {
                     session.addCard(mobId);
                     int count = session.getCardInventory().getCardsByMobId(mobId).size();
+
                     session.send(SyncProtocol.translatableMessage(
                             "arenaclash.msg.card_obtained_count",
                             def.translationKey(), String.valueOf(count)));
                     syncCards(session);
+
+                    // Notify opponent about this card obtained
+                    for (TcpSession other : sessions.values()) {
+                        if (!other.getSessionId().equals(session.getSessionId())) {
+                            other.send(SyncProtocol.opponentCardObtained(
+                                    session.getPlayerName(), def.translationKey(), count, isBonus));
+                        }
+                    }
                 }
             }
             case SyncProtocol.C2S_READY -> {
@@ -323,6 +333,32 @@ public class ArenaClashTcpServer {
                 String cardId1 = msg.get("cardId1").getAsString();
                 String cardId2 = msg.get("cardId2").getAsString();
                 handleMergeCards(session, cardId1, cardId2);
+            }
+            case SyncProtocol.C2S_PLAYER_STATE -> {
+                // Relay player position/equipment to opponent
+                double x = msg.get("x").getAsDouble();
+                double y = msg.get("y").getAsDouble();
+                double z = msg.get("z").getAsDouble();
+                float yaw = msg.get("yaw").getAsFloat();
+                float pitch = msg.get("pitch").getAsFloat();
+                String dimension = msg.has("dim") ? msg.get("dim").getAsString() : "minecraft:overworld";
+                String equipment = msg.has("equipment") ? msg.get("equipment").getAsString() : null;
+
+                for (TcpSession other : sessions.values()) {
+                    if (!other.getSessionId().equals(session.getSessionId())) {
+                        other.send(SyncProtocol.opponentState(
+                                session.getPlayerName(), x, y, z, yaw, pitch, dimension, equipment));
+                    }
+                }
+            }
+            case SyncProtocol.C2S_BROADCAST -> {
+                // System broadcast (achievements, deaths) — relay to opponent
+                String broadcastText = msg.get("message").getAsString();
+                for (TcpSession other : sessions.values()) {
+                    if (!other.getSessionId().equals(session.getSessionId())) {
+                        other.send(SyncProtocol.broadcastRelay(session.getPlayerName(), broadcastText));
+                    }
+                }
             }
         }
     }
