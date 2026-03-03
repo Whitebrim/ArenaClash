@@ -16,20 +16,24 @@ import org.slf4j.LoggerFactory;
 import java.util.UUID;
 
 /**
- * Manages a ghostly ArmorStand entity on the integrated server that represents
- * the opponent player during survival phase. Shows their name, position,
- * equipped armor and held item in real-time.
+ * Manages two ghostly ArmorStand entities on the integrated server that represent
+ * the opponent player during survival phase.
  *
- * The entity lives on the INTEGRATED SERVER — it syncs to the client
- * automatically through normal Minecraft entity tracking. This is far more
- * reliable than injecting a client-side-only entity, which can conflict with
- * entity tracking, fail to render, or be cleaned up by internal state.
+ * TWO entities are used because marker ArmorStands have height=0, which causes
+ * the nametag to render at feet level:
+ *   1) BODY stand - Marker=true, ShowArms=true, holds equipment, NO nametag.
+ *      Positioned at the opponent's actual coordinates.
+ *   2) NAMETAG stand - Marker=true, has CustomName visible, NO equipment.
+ *      Positioned NAMETAG_Y_OFFSET blocks above the body so the name floats
+ *      above the visible equipment like a real player's nametag.
+ *
+ * Both entities live on the INTEGRATED SERVER - they sync to the client
+ * automatically through normal Minecraft entity tracking.
  *
  * Key properties:
- * - Marker=true  → no hitbox, no collision, cannot be interacted with
- * - ShowArms=true → weapons/items render on the stand
- * - Invisible=true → body hidden, only equipment + nametag visible
- * - Invulnerable=true → cannot be damaged
+ * - Marker=true  -> no hitbox, no collision, cannot be interacted with
+ * - Invisible=true -> body hidden, only equipment + nametag visible
+ * - Invulnerable=true -> cannot be damaged
  * - Position interpolated smoothly for fluid movement
  * - Disappears when dimensions don't match (opponent in Nether, you in Overworld)
  * - Auto-removes after 5 seconds without an update (opponent disconnected)
@@ -37,10 +41,19 @@ import java.util.UUID;
 public class OpponentMarkerManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("ArenaClash-OpponentMarker");
 
-    /** Stable UUID so we can find/replace the entity reliably. */
-    private static final UUID MARKER_UUID = UUID.fromString("00000000-aaaa-cccc-aaaa-000000000001");
+    /** Stable UUIDs so we can find/replace the entities reliably. */
+    private static final UUID BODY_UUID = UUID.fromString("00000000-aaaa-cccc-aaaa-000000000001");
+    private static final UUID NAMETAG_UUID = UUID.fromString("00000000-aaaa-cccc-aaaa-000000000002");
 
-    private static ArmorStandEntity markerEntity = null;
+    /**
+     * Height offset for the nametag stand above the body stand.
+     * Marker armor stands have height=0, so nametag renders at feet position.
+     * We place a separate stand higher so the name floats above the "head".
+     */
+    private static final double NAMETAG_Y_OFFSET = 2.0;
+
+    private static ArmorStandEntity bodyEntity = null;
+    private static ArmorStandEntity nametagEntity = null;
     private static String opponentName = null;
 
     // --- Target state (written from TCP thread, read from tick thread) ---
@@ -95,18 +108,18 @@ public class OpponentMarkerManager {
             return;
         }
 
-        // Timeout — opponent disconnected or stopped sending
+        // Timeout - opponent disconnected or stopped sending
         ticksSinceLastUpdate++;
         if (ticksSinceLastUpdate > TIMEOUT_TICKS) {
             remove();
             return;
         }
 
-        // Dimension check — hide marker if opponent is in a different dimension
+        // Dimension check - hide marker if opponent is in a different dimension
         String localDim = client.world.getRegistryKey().getValue().toString();
         String opDim = targetDimension;
         if (opDim != null && !opDim.equals(localDim)) {
-            removeEntity();
+            removeEntities();
             return;
         }
 
@@ -124,30 +137,38 @@ public class OpponentMarkerManager {
             ServerWorld world = server.getOverworld();
             if (world == null) return;
 
-            // Create entity if missing
-            if (markerEntity == null || markerEntity.isRemoved()) {
-                createMarker(world, tx, ty, tz, tyaw);
+            // Create entities if missing
+            if (bodyEntity == null || bodyEntity.isRemoved()
+                    || nametagEntity == null || nametagEntity.isRemoved()) {
+                createMarkers(world, tx, ty, tz, tyaw);
             }
 
-            if (markerEntity == null) return;
+            if (bodyEntity == null || nametagEntity == null) return;
 
             // Interpolate position
             currentX += (tx - currentX) * LERP_SPEED;
             currentY += (ty - currentY) * LERP_SPEED;
             currentZ += (tz - currentZ) * LERP_SPEED;
 
-            // Interpolate yaw (handle 360° wrap)
+            // Interpolate yaw (handle 360 wrap)
             float yawDiff = tyaw - currentYaw;
             while (yawDiff > 180) yawDiff -= 360;
             while (yawDiff < -180) yawDiff += 360;
             currentYaw += yawDiff * LERP_SPEED;
 
-            markerEntity.setPosition(currentX, currentY, currentZ);
-            markerEntity.setYaw(currentYaw);
-            markerEntity.setHeadYaw(currentYaw);
-            markerEntity.setBodyYaw(currentYaw);
+            // Update body stand (at opponent's actual position)
+            bodyEntity.setPosition(currentX, currentY, currentZ);
+            bodyEntity.setYaw(currentYaw);
+            bodyEntity.setHeadYaw(currentYaw);
+            bodyEntity.setBodyYaw(currentYaw);
 
-            // Apply equipment if changed
+            // Update nametag stand (offset above body)
+            nametagEntity.setPosition(currentX, currentY + NAMETAG_Y_OFFSET, currentZ);
+            nametagEntity.setYaw(currentYaw);
+            nametagEntity.setHeadYaw(currentYaw);
+            nametagEntity.setBodyYaw(currentYaw);
+
+            // Apply equipment to body stand only
             if (eqSnbt != null) {
                 applyEquipment(eqSnbt, world);
             }
@@ -155,10 +176,10 @@ public class OpponentMarkerManager {
     }
 
     /**
-     * Remove the marker entirely. Called when leaving survival or disconnecting.
+     * Remove both markers entirely. Called when leaving survival or disconnecting.
      */
     public static void remove() {
-        removeEntity();
+        removeEntities();
         hasTarget = false;
         opponentName = null;
         pendingEquipment = null;
@@ -170,72 +191,95 @@ public class OpponentMarkerManager {
     // INTERNALS
     // =====================================================================
 
-    private static void removeEntity() {
-        if (markerEntity != null) {
-            ArmorStandEntity entity = markerEntity;
-            markerEntity = null;
-            // Schedule removal on the server thread
-            MinecraftClient client = MinecraftClient.getInstance();
-            var server = client.getServer();
+    private static void removeEntities() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        var server = client.getServer();
+
+        if (bodyEntity != null) {
+            ArmorStandEntity entity = bodyEntity;
+            bodyEntity = null;
+            if (server != null && server.isRunning()) {
+                server.execute(entity::discard);
+            }
+        }
+        if (nametagEntity != null) {
+            ArmorStandEntity entity = nametagEntity;
+            nametagEntity = null;
             if (server != null && server.isRunning()) {
                 server.execute(entity::discard);
             }
         }
     }
 
-    private static void createMarker(ServerWorld world, double x, double y, double z, float yaw) {
+    private static void createMarkers(ServerWorld world, double x, double y, double z, float yaw) {
         try {
-            // Remove any leftover marker with same UUID
-            var existing = world.getEntity(MARKER_UUID);
-            if (existing != null) existing.discard();
-
-            ArmorStandEntity entity = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-            entity.setUuid(MARKER_UUID);
+            // Remove any leftover markers with same UUIDs
+            var existingBody = world.getEntity(BODY_UUID);
+            if (existingBody != null) existingBody.discard();
+            var existingNametag = world.getEntity(NAMETAG_UUID);
+            if (existingNametag != null) existingNametag.discard();
 
             // Snap position (no interpolation for first frame)
             currentX = x;
             currentY = y;
             currentZ = z;
             currentYaw = yaw;
-            entity.setPosition(x, y, z);
-            entity.setYaw(yaw);
 
-            // Core flags
-            entity.setInvisible(true);     // Hide the wooden body
-            entity.setInvulnerable(true);  // Can't be damaged
-            entity.setNoGravity(true);     // Floats freely
-            entity.setSilent(true);        // No sounds
-            entity.setShowArms(true);      // Show held items / weapons
-            entity.setMarker(true);        // No hitbox at all (can't interact/push/hit)
-            entity.setHideBasePlate(true); // No stone slab at the feet
+            // --- BODY STAND: equipment visible, no nametag ---
+            ArmorStandEntity body = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
+            body.setUuid(BODY_UUID);
+            body.setPosition(x, y, z);
+            body.setYaw(yaw);
+            body.setInvisible(true);      // Hide the wooden body
+            body.setInvulnerable(true);   // Can't be damaged
+            body.setNoGravity(true);      // Floats freely
+            body.setSilent(true);         // No sounds
+            body.setShowArms(true);       // Show held items / weapons
+            body.setMarker(true);         // No hitbox at all
+            body.setHideBasePlate(true);  // No stone slab at the feet
+            body.setCustomNameVisible(false); // No nametag on body stand
+            body.addCommandTag("arenaclash_opponent_marker");
+            world.spawnEntity(body);
+            bodyEntity = body;
 
-            // Tags so our own event handlers ignore it
-            entity.addCommandTag("arenaclash_opponent_marker");
+            // --- NAMETAG STAND: nametag visible, no equipment ---
+            ArmorStandEntity nametag = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
+            nametag.setUuid(NAMETAG_UUID);
+            nametag.setPosition(x, y + NAMETAG_Y_OFFSET, z);
+            nametag.setYaw(yaw);
+            nametag.setInvisible(true);
+            nametag.setInvulnerable(true);
+            nametag.setNoGravity(true);
+            nametag.setSilent(true);
+            nametag.setShowArms(false);    // No arms needed
+            nametag.setMarker(true);       // No hitbox
+            nametag.setHideBasePlate(true);
+            nametag.addCommandTag("arenaclash_opponent_marker");
 
-            // Nametag
             if (opponentName != null) {
-                entity.setCustomName(
+                nametag.setCustomName(
                         Text.literal(opponentName)
-                                .styled(s -> s.withColor(Formatting.GRAY).withItalic(true)));
-                entity.setCustomNameVisible(true);
+                                .styled(s -> s.withColor(Formatting.WHITE)));
+                nametag.setCustomNameVisible(true);
             }
 
-            world.spawnEntity(entity);
-            markerEntity = entity;
+            world.spawnEntity(nametag);
+            nametagEntity = nametag;
 
-            LOGGER.info("Spawned opponent marker for {} on integrated server", opponentName);
+            LOGGER.info("Spawned opponent markers (body + nametag) for {} on integrated server", opponentName);
         } catch (Exception e) {
-            LOGGER.error("Failed to create opponent marker", e);
-            markerEntity = null;
+            LOGGER.error("Failed to create opponent markers", e);
+            bodyEntity = null;
+            nametagEntity = null;
         }
     }
 
     /**
-     * Parse equipment SNBT and equip the ArmorStand.
+     * Parse equipment SNBT and equip the body ArmorStand.
      * Format: {Helmet:"item snbt", Chestplate:"...", ...}
      */
     private static void applyEquipment(String snbt, ServerWorld world) {
-        if (markerEntity == null) return;
+        if (bodyEntity == null) return;
         try {
             NbtCompound nbt = StringNbtReader.parse(snbt);
             var registryOps = world.getRegistryManager().getOps(net.minecraft.nbt.NbtOps.INSTANCE);
@@ -247,7 +291,7 @@ public class OpponentMarkerManager {
             applySlot(nbt, "Leggings", EquipmentSlot.LEGS, registryOps);
             applySlot(nbt, "Boots", EquipmentSlot.FEET, registryOps);
         } catch (Exception e) {
-            // Silently ignore — equipment parsing is best-effort
+            // Silently ignore - equipment parsing is best-effort
         }
     }
 
@@ -257,19 +301,19 @@ public class OpponentMarkerManager {
             if (nbt.contains(key)) {
                 String itemSnbt = nbt.getString(key);
                 if (itemSnbt.isEmpty() || itemSnbt.equals("{}")) {
-                    markerEntity.equipStack(slot, ItemStack.EMPTY);
+                    bodyEntity.equipStack(slot, ItemStack.EMPTY);
                 } else {
                     NbtCompound itemNbt = StringNbtReader.parse(itemSnbt);
                     ItemStack stack = ItemStack.CODEC.parse(ops, itemNbt)
                             .resultOrPartial(err -> {})
                             .orElse(ItemStack.EMPTY);
-                    markerEntity.equipStack(slot, stack);
+                    bodyEntity.equipStack(slot, stack);
                 }
             } else {
-                markerEntity.equipStack(slot, ItemStack.EMPTY);
+                bodyEntity.equipStack(slot, ItemStack.EMPTY);
             }
         } catch (Exception e) {
-            markerEntity.equipStack(slot, ItemStack.EMPTY);
+            bodyEntity.equipStack(slot, ItemStack.EMPTY);
         }
     }
 }

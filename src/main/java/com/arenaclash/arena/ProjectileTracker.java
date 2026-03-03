@@ -156,8 +156,11 @@ public class ProjectileTracker {
                     continue;
                 }
 
-                // Check distance — use horizontal + vertical proximity
-                double dist = proj.squaredDistanceTo(targetEntity);
+                // Check distance to entity bounding box center (not feet).
+                // Arrows aim at entity center, so measuring to feet position causes
+                // misses on tall mobs like ghasts where the vertical offset > hitRadius.
+                Vec3d entityCenter = targetEntity.getPos().add(0, targetEntity.getHeight() * 0.5, 0);
+                double dist = proj.getPos().squaredDistanceTo(entityCenter);
                 if (dist <= tp.hitRadius * tp.hitRadius) {
                     // HIT! Apply damage and effects
                     applyMobHit(tp, proj, targetEntity, world, allMobs, structures);
@@ -231,7 +234,8 @@ public class ProjectileTracker {
      */
     private void applyGhastAOE(TrackedProjectile tp, Vec3d center,
                                ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
-        double explosionRadius = tp.aoeRadius > 0 ? tp.aoeRadius : 4.0;
+        double explosionRadius = tp.aoeRadius > 0 ? tp.aoeRadius : 4.5;
+        double epicenterRadius = 0.5; // Full damage within this radius
         float explosionDamage = (float) tp.damage;
 
         // Damage all enemy mobs in radius
@@ -242,8 +246,14 @@ public class ProjectileTracker {
             double dx = center.x - e.getX(), dz = center.z - e.getZ();
             double dist = Math.sqrt(dx * dx + dz * dz);
             if (dist <= explosionRadius) {
-                // Damage falloff: full at center, zero at edge
-                float dmg = (float) (explosionDamage * (1.0 - dist / explosionRadius));
+                // Epicenter (within 0.5 blocks): 100% damage
+                // Beyond epicenter: gradual falloff from 100% to 0% at the edge
+                float dmg;
+                if (dist <= epicenterRadius) {
+                    dmg = explosionDamage;
+                } else {
+                    dmg = (float) (explosionDamage * (1.0 - (dist - epicenterRadius) / (explosionRadius - epicenterRadius)));
+                }
                 if (dmg < 0.5f) continue;
                 mob.takeDamage(dmg, world);
                 ArenaMob.spawnDamageNumber(world,

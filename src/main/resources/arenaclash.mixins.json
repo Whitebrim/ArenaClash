@@ -7,7 +7,9 @@
     "ServerWorldMixin",
     "PlayerManagerMixin",
     "DayCycleMixin",
-    "EntityRideMixin"
+    "EntityRideMixin",
+    "ProjectileCollisionMixin",
+    "ArenaMobDamageMixin"
   ],
   "client": [],
   "injectors": {

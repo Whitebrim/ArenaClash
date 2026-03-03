@@ -268,7 +268,12 @@ public class ArenaMob {
         entity.addCommandTag("team_" + team.name());
         entity.addCommandTag("lane_" + lane.name());
         entity.setCustomNameVisible(false);
-        entity.setInvulnerable(true);
+        // NOTE: We intentionally do NOT set entity.setInvulnerable(true) here.
+        // Vanilla invulnerability causes arrow deflection in PersistentProjectileEntity.onEntityHit
+        // (both isInvulnerableTo check AND damage() returning false trigger velocity reversal).
+        // Instead, ArenaMobDamageMixin blocks ALL vanilla damage at the LivingEntity.damage() level,
+        // while ProjectileCollisionMixin prevents projectile consumption.
+        // Custom damage is applied via ArenaMob.takeDamage() → setHealth() which bypasses damage().
 
         world.spawnEntity(entity);
         this.entityId = entity.getUuid();
@@ -759,11 +764,11 @@ public class ArenaMob {
                     fb.addCommandTag("arenaclash_mob_projectile");
                     world.spawnEntity(fb);
                     tracker.trackMobProjectile(fb.getUuid(), team, defender, dmg,
-                            ProjectileTracker.HitEffect.GHAST_AOE, 3.0, 4.0);
+                            ProjectileTracker.HitEffect.GHAST_AOE, 3.0, 4.5);
                 } catch (Exception ignored) {
                     ArrowEntity arrow = spawnVisualArrow(world, shootFrom, direction);
                     tracker.trackMobProjectile(arrow.getUuid(), team, defender, dmg,
-                            ProjectileTracker.HitEffect.GHAST_AOE, 2.5, 4.0);
+                            ProjectileTracker.HitEffect.GHAST_AOE, 2.5, 4.5);
                 }
                 world.playSound(null, attacker.getBlockPos(), SoundEvents.ENTITY_GHAST_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.0f);
             }
@@ -998,7 +1003,6 @@ public class ArenaMob {
                 vex.refreshPositionAndAngles(vx, vy, vz, 0, 0);
                 vex.setAiDisabled(true);
                 vex.setPersistent();
-                vex.setInvulnerable(true);
                 vex.addCommandTag("arenaclash_mob");
                 vex.addCommandTag("team_" + team.name());
                 vex.addCommandTag("lane_" + lane.name());
@@ -1481,38 +1485,53 @@ public class ArenaMob {
     }
 
     /**
-     * Generate approach positions around a structure (especially throne) and
-     * pick the one with the fewest mobs already heading there.
-     * Returns 6 positions: 3 in front and 3 on each side of the structure.
+     * Generate approach positions around a structure and pick the one with
+     * the fewest mobs already heading there.
+     *
+     * All offsets are relative to the structure's center BlockPos.
+     * frontDirZ points TOWARD the attacker's side: P1=-1 (attacks from -Z), P2=+1 (attacks from +Z).
+     *
+     * Throne (9 positions):
+     *   Front row (3):  X in {-1, 0, +1},  Z = center + frontDirZ * 3
+     *   Side 1 (3):     X = +3,            Z in {center - 1, center, center + 1}
+     *   Side 2 (3):     X = -3,            Z in {center - 1, center, center + 1}
+     *
+     * Tower (3 positions):
+     *   Front row (3):  X in {-1, 0, +1},  Z = center + frontDirZ * 2
      */
     private Vec3d pickStructureApproachPos(ArenaStructure struct, List<ArenaMob> allMobs) {
-        Vec3d center = Vec3d.ofCenter(struct.getPosition());
+        // Use integer BlockPos as center (no +0.5 offset) so positions land on block grid
+        BlockPos pos = struct.getPosition();
+        double cx = pos.getX();
+        double cy = pos.getY();
+        double cz = pos.getZ();
 
-        // Approach direction: P1 comes from -Z, so "front" of enemy throne is the -Z face.
-        // P2 comes from +Z, so "front" of enemy throne is the +Z face.
+        // Approach direction: P1 comes from -Z, P2 comes from +Z
         double frontDirZ = (team == TeamSide.PLAYER1) ? -1.0 : 1.0;
 
         List<Vec3d> approachPoints = new ArrayList<>();
 
         if (struct.getType() == ArenaStructure.StructureType.TOWER) {
-            // Tower is 3x3. Front positions 2 blocks ahead.
-            approachPoints.add(center.add(-1.0, 0, frontDirZ * 2.0));
-            approachPoints.add(center.add(0.0, 0, frontDirZ * 2.0));
-            approachPoints.add(center.add(1.0, 0, frontDirZ * 2.0));
+            // Tower: 3 front positions, 2 blocks ahead of center
+            double fz = cz + frontDirZ * 2.0;
+            approachPoints.add(new Vec3d(cx + 1.0, cy, fz));
+            approachPoints.add(new Vec3d(cx,       cy, fz));
+            approachPoints.add(new Vec3d(cx - 1.0, cy, fz));
         } else {
-            // Throne is 5x5. Front 3 blocks ahead, sides 3 blocks to each side.
-            // Front row
-            approachPoints.add(center.add(-1.0, 0, frontDirZ * 3.0));
-            approachPoints.add(center.add(0.0, 0, frontDirZ * 3.0));
-            approachPoints.add(center.add(1.0, 0, frontDirZ * 3.0));
-            // Left side (spread along Z: frontDirZ * -1, 0, +1)
-            approachPoints.add(center.add(-3.0, 0, frontDirZ * -1.0));
-            approachPoints.add(center.add(-3.0, 0, 0.0));
-            approachPoints.add(center.add(-3.0, 0, frontDirZ * 1.0));
-            // Right side
-            approachPoints.add(center.add(3.0, 0, frontDirZ * -1.0));
-            approachPoints.add(center.add(3.0, 0, 0.0));
-            approachPoints.add(center.add(3.0, 0, frontDirZ * 1.0));
+            // Throne: 3 front + 3 per side = 9 positions
+            // Front row: 3 blocks ahead of center
+            double fz = cz + frontDirZ * 3.0;
+            approachPoints.add(new Vec3d(cx + 1.0, cy, fz));
+            approachPoints.add(new Vec3d(cx,       cy, fz));
+            approachPoints.add(new Vec3d(cx - 1.0, cy, fz));
+            // Side 1 (X = +3): spread along Z from center-1 to center+1
+            approachPoints.add(new Vec3d(cx + 3.0, cy, cz - 1.0));
+            approachPoints.add(new Vec3d(cx + 3.0, cy, cz));
+            approachPoints.add(new Vec3d(cx + 3.0, cy, cz + 1.0));
+            // Side 2 (X = -3): spread along Z from center-1 to center+1
+            approachPoints.add(new Vec3d(cx - 3.0, cy, cz - 1.0));
+            approachPoints.add(new Vec3d(cx - 3.0, cy, cz));
+            approachPoints.add(new Vec3d(cx - 3.0, cy, cz + 1.0));
         }
 
         // Count how many mobs are targeting each position
@@ -1554,7 +1573,8 @@ public class ArenaMob {
      */
     private Vec3d getStructureMoveTarget() {
         if (structureApproachPos != null) return structureApproachPos;
-        return Vec3d.ofCenter(targetStructure.getPosition());
+        BlockPos pos = targetStructure.getPosition();
+        return new Vec3d(pos.getX(), pos.getY(), pos.getZ());
     }
 
     public Entity getEntity(ServerWorld world) {

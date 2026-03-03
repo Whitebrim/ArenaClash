@@ -25,6 +25,7 @@ public class TcpSession {
     private volatile boolean alive = true;
     private String savedInventoryJson = null; // Saved survival inventory
     private boolean paused = false; // Client pause state (ESC menu open)
+    private String lastEquipmentSnbt = null; // Cached equipment SNBT for opponent relay
 
     public TcpSession(String sessionId, String playerName, UUID playerUuid, OutputStream outputStream) {
         this.sessionId = sessionId;
@@ -50,6 +51,8 @@ public class TcpSession {
     public void setSavedInventoryJson(String json) { this.savedInventoryJson = json; }
     public boolean isPaused() { return paused; }
     public void setPaused(boolean paused) { this.paused = paused; }
+    public String getLastEquipmentSnbt() { return lastEquipmentSnbt; }
+    public void setLastEquipmentSnbt(String snbt) { this.lastEquipmentSnbt = snbt; }
 
     public void disconnect() {
         alive = false;

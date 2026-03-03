@@ -344,10 +344,17 @@ public class ArenaClashTcpServer {
                 String dimension = msg.has("dim") ? msg.get("dim").getAsString() : "minecraft:overworld";
                 String equipment = msg.has("equipment") ? msg.get("equipment").getAsString() : null;
 
+                // Cache equipment so we can always send it to opponent
+                // (client only sends equipment when it changes, but opponent needs it on reconnect)
+                if (equipment != null) {
+                    session.setLastEquipmentSnbt(equipment);
+                }
+                String equipmentToRelay = session.getLastEquipmentSnbt();
+
                 for (TcpSession other : sessions.values()) {
                     if (!other.getSessionId().equals(session.getSessionId())) {
                         other.send(SyncProtocol.opponentState(
-                                session.getPlayerName(), x, y, z, yaw, pitch, dimension, equipment));
+                                session.getPlayerName(), x, y, z, yaw, pitch, dimension, equipmentToRelay));
                     }
                 }
             }
