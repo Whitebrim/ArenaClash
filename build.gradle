@@ -12,7 +12,6 @@ base {
 
 repositories {
     mavenCentral()
-    maven { url = uri("https://maven.nucleoid.xyz") }
 }
 
 loom {
@@ -32,9 +31,6 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-
-    // Fantasy - runtime world/dimension management
-    modImplementation include("xyz.nucleoid:fantasy:0.6.4+1.21")
 }
 
 processResources {

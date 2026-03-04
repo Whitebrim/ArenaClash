@@ -188,6 +188,9 @@
   "arenaclash.msg.result.details": "§7%s",
   "arenaclash.msg.result.draw": "§e§l         DRAW!",
   "arenaclash.msg.result.separator": "§6§l=============================",
+  "arenaclash.msg.result.stats.throne_dmg": "§e  Throne Damage: §f%1$s §7= §a%2$s §8| §f%3$s §7= §a%4$s",
+  "arenaclash.msg.result.stats.towers_destroyed": "§e  Towers Destroyed: §f%1$s §7= §a%2$s §8| §f%3$s §7= §a%4$s",
+  "arenaclash.msg.result.stats.tower_dmg": "§e  Tower Damage: §f%1$s §7= §a%2$s §8| §f%3$s §7= §a%4$s",
   "arenaclash.msg.result.victory": "§a§l      VICTORY!",
   "arenaclash.msg.result.winner": "§eWinner: §f%s",
   "arenaclash.msg.spawner_tag": "§c✘ Spawner",
@@ -289,5 +292,6 @@
   "block.arenaclash.card_upgrade_workbench": "Card Upgrade Workbench",
   "category.arenaclash": "Arena Clash",
   "item.arenaclash.card_upgrade_workbench": "Card Upgrade Workbench",
-  "key.arenaclash.open_cards": "Open Cards / Deploy"
+  "key.arenaclash.open_cards": "Open Cards / Deploy",
+  "arenaclash.msg.game_ended": "Game Over! Returning to menu..."
 }

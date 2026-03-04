@@ -65,7 +65,6 @@ public class GameManager {
     private boolean gameActive = false;
     private long currentGameSeed = 0;
     private String gameSessionId = null;
-    private int battleEndGraceTicks = -1; // grace period after all mobs dead before ending round
 
     // Pause state
     private boolean gamePaused = false;
@@ -73,6 +72,9 @@ public class GameManager {
     // World creation readiness tracking
     private final Set<UUID> worldReadyPlayers = new HashSet<>();
     private boolean waitingForWorlds = false;
+
+    // Delayed task queue (tick countdown → runnable)
+    private final List<DelayedTask> delayedTasks = new ArrayList<>();
 
     // Cumulative stats across rounds
     private final Map<TeamSide, Double> cumulativeThroneDamage = new EnumMap<>(TeamSide.class);
@@ -130,7 +132,6 @@ public class GameManager {
         playerOrder.add(p2.getPlayerUuid());
 
         // Initialize arena world and build
-        worldManager.createArenaWorld();
         arenaManager.initialize(worldManager.getArenaWorld());
         ArenaBuilder.buildArena(worldManager.getArenaWorld());
 
@@ -260,7 +261,6 @@ public class GameManager {
     private void startBattlePhase() {
         phase = GamePhase.BATTLE;
         phaseTicksRemaining = -1; // No battle timeout (unlimited)
-        battleEndGraceTicks = -1; // Reset grace period
 
         arenaManager.startBattle();
 
@@ -354,30 +354,39 @@ public class GameManager {
 
     private void endGame(TeamSide winner) {
         phase = GamePhase.GAME_OVER;
-        // gameActive stays true during GAME_OVER phase for tick processing
+        phaseTicksRemaining = 300; // 15 seconds to show results before kick
+        gameActive = true; // Keep active so tick() processes GAME_OVER
 
         String winnerName = "Draw";
         String loserName = "Draw";
-        UUID winnerUuid = null;
-        UUID loserUuid = null;
 
         if (winner != null && playerOrder.size() > winner.ordinal()) {
-            winnerUuid = playerOrder.get(winner.ordinal());
-            loserUuid = playerOrder.get(winner.opponent().ordinal());
+            UUID winnerUuid = playerOrder.get(winner.ordinal());
+            UUID loserUuid = playerOrder.get(winner.opponent().ordinal());
             TcpSession winSession = tcpServer.getSession(winnerUuid);
             TcpSession loseSession = tcpServer.getSession(loserUuid);
             if (winSession != null) winnerName = winSession.getPlayerName();
             if (loseSession != null) loserName = loseSession.getPlayerName();
         }
 
-        // Build detailed result info
-        String details = buildGameResultDetails(winner);
+        // Resolve player names for stats (always need both regardless of winner)
+        String p1Name = "Player 1";
+        String p2Name = "Player 2";
+        if (playerOrder.size() >= 2) {
+            TcpSession s1 = tcpServer.getSession(playerOrder.get(0));
+            TcpSession s2 = tcpServer.getSession(playerOrder.get(1));
+            if (s1 != null) p1Name = s1.getPlayerName();
+            if (s2 != null) p2Name = s2.getPlayerName();
+        }
 
-        // Send game result with winner/loser details for proper end screen
+        // Build detailed result info with player names
+        String details = buildGameResultDetails(p1Name, p2Name);
+
+        // Send game result via TCP for client-side end screen
         tcpServer.broadcast(SyncProtocol.gameResult(winnerName, details));
-        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.game_over_winner", winnerName));
+        tcpServer.broadcast(SyncProtocol.phaseChange("GAME_OVER", currentRound, phaseTicksRemaining));
 
-        // Send title screen messages and spawn fireworks for winner
+        // Show title screen messages on MC server
         if (server != null) {
             for (UUID uuid : playerOrder) {
                 ServerPlayerEntity player = getPlayer(uuid);
@@ -385,35 +394,122 @@ public class GameManager {
                 TeamSide playerTeam = playerTeams.get(uuid);
 
                 if (winner == null) {
-                    // Draw
                     showTranslatableTitle(player, "arenaclash.tcp.title.draw", "arenaclash.tcp.subtitle.draw");
                 } else if (playerTeam == winner) {
-                    // Winner
                     showTranslatableTitle(player, "arenaclash.tcp.title.victory", "arenaclash.tcp.subtitle.victory", loserName);
-                    // Spawn fireworks around the winner
-                    spawnFireworks(player, 10);
                 } else {
-                    // Loser
                     showTranslatableTitle(player, "arenaclash.tcp.title.defeat", "arenaclash.tcp.subtitle.defeat", winnerName);
                 }
             }
         }
 
-        // Don't immediately return to singleplayer - let players see the result for 15 seconds
-        phaseTicksRemaining = 300; // 15 seconds
-
-        // Schedule return after delay (handled in tick)
+        // Send detailed stats to MC chat and TCP
+        sendGameStats(winner, winnerName, p1Name, p2Name);
     }
 
-    private String buildGameResultDetails(TeamSide winner) {
-        StringBuilder sb = new StringBuilder();
+    /**
+     * Send detailed game statistics to all players via MC chat and TCP.
+     */
+    private void sendGameStats(TeamSide winner, String winnerName, String p1Name, String p2Name) {
+        double p1ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
+        double p2ThroneDmg = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
+        int p1Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0);
+        int p2Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER2, 0);
+        double p1TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
+        double p2TowerDmg = cumulativeTowerDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
+
+        // Send separator + result header
+        broadcastMcTranslatable("arenaclash.msg.result.separator");
+        if (winner == null) {
+            broadcastMcTranslatable("arenaclash.msg.result.draw");
+        } else {
+            broadcastMcTranslatable("arenaclash.msg.result.winner", winnerName);
+        }
+
+        // Send per-player stats
+        broadcastMcTranslatable("arenaclash.msg.result.stats.throne_dmg",
+                p1Name, String.format("%.0f", p1ThroneDmg), p2Name, String.format("%.0f", p2ThroneDmg));
+        broadcastMcTranslatable("arenaclash.msg.result.stats.towers_destroyed",
+                p1Name, String.valueOf(p1Towers), p2Name, String.valueOf(p2Towers));
+        broadcastMcTranslatable("arenaclash.msg.result.stats.tower_dmg",
+                p1Name, String.format("%.0f", p1TowerDmg), p2Name, String.format("%.0f", p2TowerDmg));
+        broadcastMcTranslatable("arenaclash.msg.result.separator");
+
+        // Also send via TCP for clients that might not be on MC server
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.separator"));
+        if (winner == null) {
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.draw"));
+        } else {
+            tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.winner", winnerName));
+        }
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.stats.throne_dmg",
+                p1Name, String.format("%.0f", p1ThroneDmg), p2Name, String.format("%.0f", p2ThroneDmg)));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.stats.towers_destroyed",
+                p1Name, String.valueOf(p1Towers), p2Name, String.valueOf(p2Towers)));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.stats.tower_dmg",
+                p1Name, String.format("%.0f", p1TowerDmg), p2Name, String.format("%.0f", p2TowerDmg)));
+        tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.msg.result.separator"));
+    }
+
+    /**
+     * Called after the 15-second GAME_OVER display period.
+     * Kicks players, cleans up the world, and resets game state.
+     */
+    private void finalizeGameEnd() {
+        // Tell clients to return to title screen
+        tcpServer.broadcast(SyncProtocol.returnToSingle());
+
+        // Mark game as inactive
+        gameActive = false;
+
+        // Kick all MC players
+        if (worldManager != null) {
+            worldManager.kickAllPlayers();
+        }
+
+        // Schedule world cleanup with a short delay (3 ticks) to ensure
+        // disconnected players are fully removed before entity iteration
+        scheduleDelayed(3, () -> {
+            arenaManager.fullReset();
+            if (worldManager != null) {
+                worldManager.cleanupArenaWorld();
+            }
+        });
+
+        // Clean up stale TCP sessions
+        if (tcpServer != null) tcpServer.cleanupStaleSessions();
+
+        // Reset game state for next game
+        playerTeams.clear();
+        playerOrder.clear();
+        readyPlayers.clear();
+        phase = GamePhase.LOBBY;
+        currentRound = 0;
+        gamePaused = false;
+        waitingForWorlds = false;
+        worldReadyPlayers.clear();
+        for (TeamSide t : TeamSide.values()) {
+            cumulativeThroneDamage.put(t, 0.0);
+            cumulativeTowersDestroyed.put(t, 0);
+            cumulativeTowerDamage.put(t, 0.0);
+            prevThroneDamageSnapshot.put(t, 0.0);
+            prevTowerDamageSnapshot.put(t, 0.0);
+            prevTowersDestroyedSnapshot.put(t, 0);
+        }
+
+        if (tcpServer != null) {
+            tcpServer.broadcastLobbyUpdate();
+        }
+    }
+
+    private String buildGameResultDetails(String p1Name, String p2Name) {
         double p1Throne = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER1, 0.0);
         double p2Throne = cumulativeThroneDamage.getOrDefault(TeamSide.PLAYER2, 0.0);
         int p1Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER1, 0);
         int p2Towers = cumulativeTowersDestroyed.getOrDefault(TeamSide.PLAYER2, 0);
-        sb.append(String.format("Throne Damage: P1=%.0f / P2=%.0f | ", p1Throne, p2Throne));
-        sb.append(String.format("Towers Destroyed: P1=%d / P2=%d", p1Towers, p2Towers));
-        return sb.toString();
+        return String.format("Throne Damage: %s=%.0f / %s=%.0f | Towers Destroyed: %s=%d / %s=%d",
+                p1Name, p1Throne, p2Name, p2Throne,
+                p1Name, p1Towers, p2Name, p2Towers);
     }
 
     private void showTranslatableTitle(ServerPlayerEntity player, String titleKey, String subtitleKey, String... args) {
@@ -495,30 +591,6 @@ public class GameManager {
         }
     }
 
-    private void spawnFireworks(ServerPlayerEntity player, int count) {
-        if (player == null || player.isDisconnected()) return;
-        net.minecraft.server.world.ServerWorld world = player.getServerWorld();
-        for (int i = 0; i < count; i++) {
-            double x = player.getX() + (world.getRandom().nextDouble() - 0.5) * 10;
-            double y = player.getY() + 2 + world.getRandom().nextDouble() * 5;
-            double z = player.getZ() + (world.getRandom().nextDouble() - 0.5) * 10;
-
-            // Create a simple firework rocket entity
-            net.minecraft.item.ItemStack fireworkStack = new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET);
-            net.minecraft.entity.projectile.FireworkRocketEntity firework =
-                    new net.minecraft.entity.projectile.FireworkRocketEntity(world, x, y, z, fireworkStack);
-
-            // Stagger the fireworks over time
-            final int delay = i * 10; // 0.5 seconds apart
-            final net.minecraft.entity.projectile.FireworkRocketEntity fw = firework;
-            new Thread(() -> {
-                try { Thread.sleep(delay * 50L); } catch (InterruptedException ignored) {}
-                server.execute(() -> {
-                    try { world.spawnEntity(fw); } catch (Exception ignored) {}
-                });
-            }, "ArenaClash-Firework-" + i).start();
-        }
-    }
 
     private TeamSide determineWinner() {
         double epsilon = 0.01; // Ignore tiny floating point differences
@@ -550,8 +622,11 @@ public class GameManager {
     // ========================================================================
 
     public void tick() {
+        // Always process delayed tasks (e.g. post-game world cleanup)
+        tickDelayedTasks();
+
         if (!gameActive) return;
-        if (gamePaused) return;
+        if (gamePaused && phase != GamePhase.GAME_OVER) return;
 
         // If waiting for world creation, don't tick survival timer
         if (waitingForWorlds && phase == GamePhase.SURVIVAL) {
@@ -743,40 +818,10 @@ public class GameManager {
         // No countdown timeout for battle
         arenaManager.tickBattle();
 
-        // Check for instant-win (throne destroyed)
+        // Check for battle end
         ArenaManager.BattleResult result = arenaManager.checkBattleEnd();
-        if (result != null && result.type() == ArenaManager.BattleResult.Type.THRONE_DESTROYED) {
+        if (result != null) {
             endRound(result);
-            return;
-        }
-
-        // ALL_MOBS_DEAD: start a grace period before ending the round
-        if (result != null && result.type() == ArenaManager.BattleResult.Type.ALL_MOBS_DEAD) {
-            if (battleEndGraceTicks < 0) {
-                // Start the 10-second grace period
-                battleEndGraceTicks = 200; // 10 seconds
-                tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.mobs_finished"));
-                broadcastMcTranslatable("arenaclash.tcp.mobs_finished");
-                // Send grace timer to clients so they see a countdown
-                tcpServer.broadcast(SyncProtocol.timerSync(battleEndGraceTicks));
-            }
-        } else {
-            // Mobs are still active - reset grace timer if it was started
-            if (battleEndGraceTicks > 0) {
-                battleEndGraceTicks = -1;
-            }
-        }
-
-        // Tick grace period
-        if (battleEndGraceTicks > 0) {
-            battleEndGraceTicks--;
-            if (battleEndGraceTicks % 20 == 0 && battleEndGraceTicks > 0) {
-                tcpServer.broadcast(SyncProtocol.timerSync(battleEndGraceTicks));
-            }
-            if (battleEndGraceTicks <= 0) {
-                endRound(new ArenaManager.BattleResult(
-                        ArenaManager.BattleResult.Type.ALL_MOBS_DEAD, null));
-            }
         }
     }
 
@@ -787,20 +832,16 @@ public class GameManager {
         }
     }
 
-    /**
-     * Game over countdown - show results for 15 seconds then clean up.
-     */
     private void tickGameOver() {
         phaseTicksRemaining--;
+
+        // Sync timer to clients every second so they can show countdown
         if (phaseTicksRemaining % 20 == 0) {
             tcpServer.broadcast(SyncProtocol.timerSync(phaseTicksRemaining));
         }
+
         if (phaseTicksRemaining <= 0) {
-            tcpServer.broadcast(SyncProtocol.returnToSingle());
-            // Game is no longer active after this point
-            gameActive = false;
-            // Clean up stale reconnect-holdover sessions
-            if (tcpServer != null) tcpServer.cleanupStaleSessions();
+            finalizeGameEnd();
         }
     }
 
@@ -1102,12 +1143,11 @@ public class GameManager {
     // ========================================================================
 
     public Text resetGame() {
-        if (worldManager != null && worldManager.getArenaWorld() != null) {
-            ArenaBuilder.clearArena(worldManager.getArenaWorld());
-        }
         arenaManager.fullReset();
         if (worldManager != null) {
-            worldManager.deleteAllWorlds();
+            worldManager.kickAllPlayers();
+            // Delayed cleanup to ensure players are fully disconnected
+            scheduleDelayed(3, () -> worldManager.cleanupArenaWorld());
         }
         playerTeams.clear();
         playerOrder.clear();
@@ -1115,10 +1155,10 @@ public class GameManager {
         gameActive = false;
         phase = GamePhase.LOBBY;
         currentRound = 0;
-        battleEndGraceTicks = -1;
         gamePaused = false;
         waitingForWorlds = false;
         worldReadyPlayers.clear();
+        // Note: do NOT clear delayedTasks here - the cleanup task we just scheduled needs to run
         for (TeamSide t : TeamSide.values()) {
             cumulativeThroneDamage.put(t, 0.0);
             cumulativeTowersDestroyed.put(t, 0);
@@ -1136,6 +1176,45 @@ public class GameManager {
         }
 
         return Text.translatable("arenaclash.cmd.game_reset_done");
+    }
+
+    // ========================================================================
+    // DELAYED TASKS
+    // ========================================================================
+
+    private record DelayedTask(int ticksRemaining, Runnable action) {}
+
+    /**
+     * Schedule a task to run after a delay (in server ticks).
+     * Used to defer cleanup until players are fully disconnected.
+     */
+    private void scheduleDelayed(int delayTicks, Runnable action) {
+        delayedTasks.add(new DelayedTask(delayTicks, action));
+    }
+
+    /**
+     * Process delayed tasks. Called every tick regardless of game state.
+     */
+    private void tickDelayedTasks() {
+        if (delayedTasks.isEmpty()) return;
+        List<Runnable> ready = new ArrayList<>();
+        List<DelayedTask> remaining = new ArrayList<>();
+        for (DelayedTask task : delayedTasks) {
+            if (task.ticksRemaining() <= 1) {
+                ready.add(task.action());
+            } else {
+                remaining.add(new DelayedTask(task.ticksRemaining() - 1, task.action()));
+            }
+        }
+        delayedTasks.clear();
+        delayedTasks.addAll(remaining);
+        for (Runnable action : ready) {
+            try {
+                action.run();
+            } catch (Exception e) {
+                System.err.println("[ArenaClash] Delayed task failed: " + e.getMessage());
+            }
+        }
     }
 
     // ========================================================================

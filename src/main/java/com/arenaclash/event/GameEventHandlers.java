@@ -156,7 +156,9 @@ public class GameEventHandlers {
             if (data == null) return;
             GamePhase phase = gm.getPhase();
             if (phase == GamePhase.SURVIVAL) {
-                gm.getWorldManager().teleportToSurvival(newPlayer, data.getTeam());
+                // Survival phase is singleplayer — player shouldn't be on MC server
+                // If they are here somehow, just teleport to arena spawn
+                gm.getWorldManager().teleportToArena(newPlayer, data.getTeam());
             } else if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE) {
                 gm.getWorldManager().teleportToArena(newPlayer, data.getTeam());
             }
