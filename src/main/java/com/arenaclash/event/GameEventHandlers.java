@@ -125,7 +125,7 @@ public class GameEventHandlers {
                     }
                 }
 
-                if (!player.getServer().isDedicated()) {
+                if (!player.level().getServer().isDedicatedServer()) {
                     if (!com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive) return;
                     com.arenaclash.tcp.SingleplayerBridge.pendingMobKills.add(finalCardId);
                     // Message with card count is sent by the TCP server after CARD_OBTAINED
@@ -175,7 +175,7 @@ public class GameEventHandlers {
                     || entity.entityTags().contains("arenaclash_structure")
                     || entity.entityTags().contains("arenaclash_marker")
                     || entity.entityTags().contains("arenaclash_opponent_marker")) {
-                serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.arena_no_attack"), true);
+                serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.arena_no_attack"), true);
                 return InteractionResult.FAIL;
             }
 
@@ -184,7 +184,7 @@ public class GameEventHandlers {
             if (gm.isGameActive()) {
                 ServerLevel arenaWorld = gm.getWorldManager().getArenaWorld();
                 if (world == arenaWorld && entity instanceof ServerPlayer) {
-                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.no_pvp"), true);
+                    serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.no_pvp"), true);
                     return InteractionResult.FAIL;
                 }
             }
@@ -217,7 +217,7 @@ public class GameEventHandlers {
                 ServerLevel arenaW = (gmCheck.isGameActive() && gmCheck.getWorldManager() != null)
                         ? gmCheck.getWorldManager().getArenaWorld() : null;
                 if (arenaW == null || world != arenaW) {
-                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.workbench_arena_only"), true);
+                    serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.workbench_arena_only"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
@@ -240,7 +240,7 @@ public class GameEventHandlers {
                 TeamSide playerTeam = interactData.getTeam();
                 TeamSide opponentTeam = (playerTeam == TeamSide.PLAYER1) ? TeamSide.PLAYER2 : TeamSide.PLAYER1;
                 if (gm.getArenaManager().isInBuildZone(opponentTeam, clickedPos)) {
-                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.enemy_build_zone"), true);
+                    serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.enemy_build_zone"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
@@ -249,7 +249,7 @@ public class GameEventHandlers {
             if (world.getBlockState(clickedPos).is(Blocks.BELL)) {
                 PlayerGameData data = gm.getPlayerData(serverPlayer.getUUID());
                 if (data == null) {
-                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
+                    serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
                     return resyncAndFail(serverPlayer);
                 }
 
@@ -265,7 +265,7 @@ public class GameEventHandlers {
 
                     return InteractionResult.SUCCESS;
                 } else if (bellTeam != null) {
-                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.not_your_bell"), true);
+                    serverPlayer.sendSystemMessage(Component.translatable("arenaclash.msg.not_your_bell"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
@@ -311,14 +311,14 @@ public class GameEventHandlers {
         if (!gm.isGameActive()) return true;
 
         ServerLevel arenaWorld = gm.getWorldManager().getArenaWorld();
-        if (arenaWorld == null || player.serverLevel() != arenaWorld) return true;
+        if (arenaWorld == null || player.level() != arenaWorld) return true;
 
         // On arena world: check if player is part of the game
         PlayerGameData data = gm.getPlayerData(player.getUUID());
 
         // Non-game players (including operators) cannot modify the arena AT ALL
         if (data == null) {
-            player.displayClientMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
+            player.sendSystemMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
             return false;
         }
 
@@ -326,14 +326,14 @@ public class GameEventHandlers {
 
         // During battle: no building for anyone
         if (phase == GamePhase.BATTLE || phase == GamePhase.ROUND_END || phase == GamePhase.GAME_OVER) {
-            player.displayClientMessage(Component.translatable("arenaclash.msg.no_modify_battle"), true);
+            player.sendSystemMessage(Component.translatable("arenaclash.msg.no_modify_battle"), true);
             return false;
         }
 
         // During preparation: only in build zone
         if (phase == GamePhase.PREPARATION) {
             // Don't allow breaking bells
-            if (player.serverLevel().getBlockState(pos).is(Blocks.BELL)) {
+            if (player.level().getBlockState(pos).is(Blocks.BELL)) {
                 return false;
             }
 
@@ -342,7 +342,7 @@ public class GameEventHandlers {
             // Check build zone
             if (cfg.buildZonesEnabled) {
                 if (!gm.getArenaManager().isInBuildZone(data.getTeam(), pos)) {
-                    player.displayClientMessage(Component.translatable("arenaclash.msg.build_zone_only"), true);
+                    player.sendSystemMessage(Component.translatable("arenaclash.msg.build_zone_only"), true);
                     return false;
                 }
             }
@@ -350,7 +350,7 @@ public class GameEventHandlers {
             // Don't allow breaking structure blocks
             for (var structure : gm.getArenaManager().getStructures()) {
                 if (structure.getBoundingBox().contains(pos.getX(), pos.getY(), pos.getZ())) {
-                    player.displayClientMessage(Component.translatable("arenaclash.msg.no_modify_structures"), true);
+                    player.sendSystemMessage(Component.translatable("arenaclash.msg.no_modify_structures"), true);
                     return false;
                 }
             }
@@ -386,10 +386,12 @@ public class GameEventHandlers {
             if (session == null) return;
 
             try {
-                net.minecraft.nbt.CompoundTag invNbt = new net.minecraft.nbt.CompoundTag();
-                net.minecraft.nbt.ListTag items = new net.minecraft.nbt.ListTag();
+                var output = net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                        net.minecraft.util.ProblemReporter.DISCARDING,
+                        player.registryAccess());
+                var items = output.list("Items", net.minecraft.world.ItemStackWithSlot.CODEC);
                 player.getInventory().save(items);
-                invNbt.put("Items", items);
+                net.minecraft.nbt.CompoundTag invNbt = output.buildResult();
                 String invSnbt = invNbt.toString();
                 session.setSavedInventoryJson(invSnbt);
                 session.setConnectedToMc(false);

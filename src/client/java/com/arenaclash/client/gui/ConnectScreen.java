@@ -75,8 +75,7 @@ public class ConnectScreen extends Screen {
             statusType = StatusType.IDLE;
             statusText = "";
             // Re-init to rebuild buttons (removes stale Continue button)
-            clearChildren();
-            init();
+            rebuildWidgets();
         }).bounds(contentX + btnWidth + 4, btnY, btnWidth, 20).build());
 
         // Continue button — only when in-game
@@ -413,7 +412,7 @@ public class ConnectScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

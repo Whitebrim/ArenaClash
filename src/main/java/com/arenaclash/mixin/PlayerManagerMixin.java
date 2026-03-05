@@ -1,7 +1,10 @@
 package com.arenaclash.mixin;
 
 import com.arenaclash.tcp.SingleplayerBridge;
+import com.google.gson.JsonElement;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentSerialization;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.players.PlayerList;
 import org.spongepowered.asm.mixin.Final;
@@ -30,7 +33,9 @@ public abstract class PlayerManagerMixin {
             try {
                 // Serialize the full styled Component as JSON — preserves colours,
                 // hover events, click events, translatable components, etc.
-                String jsonText = Component.Serialization.toJsonString(message, server.registryAccess());
+                RegistryOps<JsonElement> ops = server.registryAccess().createSerializationContext(com.mojang.serialization.JsonOps.INSTANCE);
+                String jsonText = ComponentSerialization.CODEC.encodeStart(ops, message).result()
+                        .map(JsonElement::toString).orElse(message.getString());
                 SingleplayerBridge.pendingBroadcasts.add(jsonText);
             } catch (Exception e) {
                 // Fallback: plain text (loses formatting but still delivers the message)

@@ -116,7 +116,7 @@ public class OpponentMarkerManager {
         }
 
         // Dimension check - hide marker if opponent is in a different dimension
-        String localDim = client.level.dimension().location().toString();
+        String localDim = client.level.dimension().identifier().toString();
         String opDim = targetDimension;
         if (opDim != null && !opDim.equals(localDim)) {
             removeEntities();
@@ -281,7 +281,7 @@ public class OpponentMarkerManager {
     private static void applyEquipment(String snbt, ServerLevel world) {
         if (bodyEntity == null) return;
         try {
-            CompoundTag nbt = TagParser.parseTag(snbt);
+            CompoundTag nbt = TagParser.parseCompoundFully(snbt);
             var registryOps = world.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
 
             applySlot(nbt, "MainHand", EquipmentSlot.MAINHAND, registryOps);
@@ -299,11 +299,11 @@ public class OpponentMarkerManager {
                                     com.mojang.serialization.DynamicOps<net.minecraft.nbt.Tag> ops) {
         try {
             if (nbt.contains(key)) {
-                String itemSnbt = nbt.getString(key);
+                String itemSnbt = nbt.getStringOr(key, "");
                 if (itemSnbt.isEmpty() || itemSnbt.equals("{}")) {
                     bodyEntity.setItemSlot(slot, ItemStack.EMPTY);
                 } else {
-                    CompoundTag itemNbt = TagParser.parseTag(itemSnbt);
+                    CompoundTag itemNbt = TagParser.parseCompoundFully(itemSnbt);
                     ItemStack stack = ItemStack.CODEC.parse(ops, itemNbt)
                             .resultOrPartial(err -> {})
                             .orElse(ItemStack.EMPTY);

@@ -49,8 +49,10 @@ public class DayCycleMixin {
         int extraTicks = (24000 / dayDuration) - 1;
         if (extraTicks <= 0) return;
 
-        // Advance world time
-        long currentTime = world.getDayTime();
-        world.setDayTime(currentTime + extraTicks);
+        // Advance world time via the new clock system
+        world.clockManager().addTicks(
+                world.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.WORLD_CLOCK)
+                        .getOrThrow(net.minecraft.world.clock.WorldClocks.OVERWORLD),
+                extraTicks);
     }
 }

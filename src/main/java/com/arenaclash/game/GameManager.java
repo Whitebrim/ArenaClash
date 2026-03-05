@@ -138,7 +138,7 @@ public class GameManager {
         // Disable natural mob spawning on arena world
         ServerLevel arenaWorld = worldManager.getArenaWorld();
         if (arenaWorld != null) {
-            arenaWorld.getGameRules().get(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING).set(false, server);
+            arenaWorld.getGameRules().set(net.minecraft.world.level.gamerules.GameRules.SPAWN_MOBS, false, server);
         }
 
         // Reset stats
@@ -238,9 +238,9 @@ public class GameManager {
         }
 
         // Tell clients: connect to MC server for preparation
-        String host = server.getServerIp();
+        String host = server.getLocalIp();
         if (host == null || host.isEmpty()) host = "localhost";
-        int mcPort = server.getServerPort();
+        int mcPort = server.getPort();
         if (mcPort <= 0) mcPort = 25565;
 
         tcpServer.broadcast(SyncProtocol.phaseChange("PREPARATION", currentRound, phaseTicksRemaining));
@@ -752,10 +752,12 @@ public class GameManager {
             TcpSession session = tcpServer.getSession(uuid);
             if (player != null && session != null) {
                 try {
-                    CompoundTag invNbt = new CompoundTag();
-                    ListTag items = new ListTag();
+                    var output = net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                            net.minecraft.util.ProblemReporter.DISCARDING,
+                            player.registryAccess());
+                    var items = output.list("Items", net.minecraft.world.ItemStackWithSlot.CODEC);
                     player.getInventory().save(items);
-                    invNbt.put("Items", items);
+                    CompoundTag invNbt = output.buildResult();
                     String invSnbt = invNbt.toString();
                     session.setSavedInventoryJson(invSnbt);
                     session.send(SyncProtocol.serverInventorySync(invSnbt));
@@ -1092,8 +1094,11 @@ public class GameManager {
                         String savedInv = session.getSavedInventoryJson();
                         if (savedInv != null && !savedInv.isEmpty()) {
                             try {
-                                net.minecraft.nbt.CompoundTag invNbt = net.minecraft.nbt.TagParser.parseTag(savedInv);
-                                net.minecraft.nbt.ListTag items = invNbt.getList("Items");
+                                net.minecraft.nbt.CompoundTag invNbt = net.minecraft.nbt.TagParser.parseCompoundFully(savedInv);
+                                var input = net.minecraft.world.level.storage.TagValueInput.create(
+                                        net.minecraft.util.ProblemReporter.DISCARDING,
+                                        player.registryAccess(), invNbt);
+                                var items = input.listOrEmpty("Items", net.minecraft.world.ItemStackWithSlot.CODEC);
                                 player.getInventory().clearContent();
                                 player.getInventory().load(items);
                                 player.containerMenu.broadcastChanges();

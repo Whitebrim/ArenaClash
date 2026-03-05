@@ -442,7 +442,11 @@ public class CardUpgradeScreen extends Screen {
     // ================================================================
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean fromHandler) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         if (button == 0) {
             // Check merge button FIRST (higher priority than list rows)
             CardGroup sel = getSelectedGroup();
@@ -476,7 +480,7 @@ public class CardUpgradeScreen extends Screen {
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(event, fromHandler);
     }
 
     @Override
@@ -492,19 +496,19 @@ public class CardUpgradeScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256) { // ESC
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (event.key() == 256) { // ESC
             this.onClose();
             return true;
         }
-        if (keyCode == 32) { // SPACE — quick merge like Satisfactory crafter
+        if (event.key() == 32) { // SPACE — quick merge like Satisfactory crafter
             CardGroup sel = getSelectedGroup();
             if (sel != null && sel.canMerge() && mergeCooldown <= 0) {
                 performMerge();
                 return true;
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     private void performMerge() {
@@ -577,7 +581,7 @@ public class CardUpgradeScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

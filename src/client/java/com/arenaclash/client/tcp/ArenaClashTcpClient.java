@@ -161,10 +161,12 @@ public class ArenaClashTcpClient {
                     Minecraft mc = Minecraft.getInstance();
                     if (mc.player != null && mc.isLocalServer()) {
                         try {
-                            net.minecraft.nbt.CompoundTag invNbt = new net.minecraft.nbt.CompoundTag();
-                            net.minecraft.nbt.ListTag items = new net.minecraft.nbt.ListTag();
+                            var output = net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                                    net.minecraft.util.ProblemReporter.DISCARDING,
+                                    mc.player.registryAccess());
+                            var items = output.list("Items", net.minecraft.world.ItemStackWithSlot.CODEC);
                             mc.player.getInventory().save(items);
-                            invNbt.put("Items", items);
+                            net.minecraft.nbt.CompoundTag invNbt = output.buildResult();
                             send(SyncProtocol.inventorySync(invNbt.toString()));
                         } catch (Exception e) {
                             LOGGER.error("Failed to sync inventory", e);

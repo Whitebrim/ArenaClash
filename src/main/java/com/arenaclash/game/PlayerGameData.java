@@ -1,9 +1,10 @@
 package com.arenaclash.game;
 
 import com.arenaclash.card.CardInventory;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.core.BlockPos;
 
 import java.util.UUID;
 
@@ -42,12 +43,12 @@ public class PlayerGameData {
 
     public void saveSurvivalPosition(ServerPlayer player) {
         this.survivalReturnPos = player.blockPosition();
-        this.survivalReturnWorld = player.serverLevel().dimension().location().toString();
+        this.survivalReturnWorld = player.level().dimension().identifier().toString();
     }
 
     public CompoundTag toNbt() {
         CompoundTag nbt = new CompoundTag();
-        nbt.putUUID("playerId", playerId);
+        nbt.store("playerId", UUIDUtil.CODEC, playerId);
         nbt.putString("team", team.name());
         nbt.put("cards", cardInventory.toNbt());
         nbt.putInt("xp", experiencePoints);
@@ -61,15 +62,15 @@ public class PlayerGameData {
     }
 
     public static PlayerGameData fromNbt(CompoundTag nbt) {
-        UUID id = nbt.getUUID("playerId");
-        TeamSide team = TeamSide.valueOf(nbt.getString("team"));
+        UUID id = nbt.read("playerId", UUIDUtil.CODEC).orElse(UUID.randomUUID());
+        TeamSide team = TeamSide.valueOf(nbt.getStringOr("team", "PLAYER1"));
         PlayerGameData data = new PlayerGameData(id, team);
-        data.cardInventory = CardInventory.fromNbt(nbt.getCompound("cards"));
-        data.experiencePoints = nbt.getInt("xp");
+        data.cardInventory = CardInventory.fromNbt(nbt.getCompoundOrEmpty("cards"));
+        data.experiencePoints = nbt.getIntOr("xp", 0);
         if (nbt.contains("returnX")) {
             data.survivalReturnPos = new BlockPos(
-                    nbt.getInt("returnX"), nbt.getInt("returnY"), nbt.getInt("returnZ"));
-            data.survivalReturnWorld = nbt.getString("returnWorld");
+                    nbt.getIntOr("returnX", 0), nbt.getIntOr("returnY", 0), nbt.getIntOr("returnZ", 0));
+            data.survivalReturnWorld = nbt.getStringOr("returnWorld", "");
         }
         return data;
     }

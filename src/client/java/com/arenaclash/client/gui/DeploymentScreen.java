@@ -66,15 +66,15 @@ public class DeploymentScreen extends Screen {
         for (int l = 0; l < 3; l++) {
             String laneName = LANE_NAMES[l];
             if (!slotData.contains(laneName)) continue;
-            CompoundTag laneNbt = slotData.getCompound(laneName);
+            CompoundTag laneNbt = slotData.getCompoundOrEmpty(laneName);
             for (int s = 0; s < 4; s++) {
                 String key = "slot_" + s;
                 if (!laneNbt.contains(key)) continue;
-                CompoundTag slotNbt = laneNbt.getCompound(key);
-                slotOccupied[l][s] = !slotNbt.getBoolean("empty");
+                CompoundTag slotNbt = laneNbt.getCompoundOrEmpty(key);
+                slotOccupied[l][s] = !slotNbt.getBooleanOr("empty", false);
                 if (slotOccupied[l][s] && slotNbt.contains("card")) {
-                    CompoundTag cardNbt = slotNbt.getCompound("card");
-                    String mobId = cardNbt.getString("mobId");
+                    CompoundTag cardNbt = slotNbt.getCompoundOrEmpty("card");
+                    String mobId = cardNbt.getStringOr("mobId", "");
                     var def = com.arenaclash.card.MobCardRegistry.getById(mobId);
                     slotCards[l][s] = def != null ? I18n.get(def.translationKey()) : mobId;
                 }
@@ -195,7 +195,11 @@ public class DeploymentScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean fromHandler) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         // Left click on card list -> select card
         int listX = 20;
         int listY = 50;
@@ -246,7 +250,7 @@ public class DeploymentScreen extends Screen {
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(event, fromHandler);
     }
 
     @Override
@@ -266,7 +270,7 @@ public class DeploymentScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

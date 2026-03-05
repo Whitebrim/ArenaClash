@@ -19,11 +19,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.TitleScreen;
-import net.minecraft.client.gui.screens.multiplayer.ConnectScreen;
-import net.minecraft.client.multiplayer.ServerAddress;
+import net.minecraft.client.gui.screens.ConnectScreen;
+import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.client.InputConstants;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
@@ -92,9 +92,11 @@ public class ArenaClashClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        var arenaClashCategory = KeyMapping.Category.register(
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("arenaclash", "category"));
         openCardsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.arenaclash.open_cards", InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_TAB, "category.arenaclash"
+                GLFW.GLFW_KEY_TAB, arenaClashCategory
         ));
 
         // Load saved server address
@@ -284,8 +286,11 @@ public class ArenaClashClient implements ClientModInitializer {
                                         .getPlayer(client.player.getUUID());
                                 if (serverPlayer != null) {
                                     net.minecraft.nbt.CompoundTag invNbt =
-                                            net.minecraft.nbt.TagParser.parseTag(snbt);
-                                    net.minecraft.nbt.ListTag items = invNbt.getList("Items", 10);
+                                            net.minecraft.nbt.TagParser.parseCompoundFully(snbt);
+                                    var input = net.minecraft.world.level.storage.TagValueInput.create(
+                                            net.minecraft.util.ProblemReporter.DISCARDING,
+                                            serverPlayer.registryAccess(), invNbt);
+                                    var items = input.listOrEmpty("Items", net.minecraft.world.ItemStackWithSlot.CODEC);
                                     serverPlayer.getInventory().clearContent();
                                     serverPlayer.getInventory().load(items);
                                     serverPlayer.containerMenu.broadcastChanges();
@@ -342,7 +347,7 @@ public class ArenaClashClient implements ClientModInitializer {
         double z = client.player.getZ();
         float yaw = client.player.getYRot();
         float pitch = client.player.getXRot();
-        String dimension = client.level.dimension().location().toString();
+        String dimension = client.level.dimension().identifier().toString();
 
         // Build equipment SNBT
         String equipmentSnbt = buildEquipmentSnbt(client);
@@ -513,16 +518,15 @@ public class ArenaClashClient implements ClientModInitializer {
         }
 
         if (client.level != null) {
-            client.level.disconnect();
+            client.disconnectWithProgressScreen();
         }
-        client.disconnect();
 
         new Thread(() -> {
             try { Thread.sleep(500); } catch (InterruptedException ignored) {}
             client.execute(() -> {
-                ServerAddress address = new ServerAddress(host, port);
+                ServerAddress address = ServerAddress.parseString(host + ":" + port);
                 ServerData info = new ServerData("Arena Clash", address.toString(), ServerData.Type.OTHER);
-                ConnectScreen.connect(
+                ConnectScreen.startConnecting(
                         client.screen != null ? client.screen : new TitleScreen(),
                         client, address, info, false, null);
             });
@@ -533,9 +537,8 @@ public class ArenaClashClient implements ClientModInitializer {
         LOGGER.info("Returning to singleplayer (world: {})", savedSingleplayerWorld);
 
         if (client.level != null) {
-            client.level.disconnect();
+            client.disconnectWithProgressScreen();
         }
-        client.disconnect();
 
         if (savedSingleplayerWorld != null) {
             new Thread(() -> {
@@ -562,9 +565,8 @@ public class ArenaClashClient implements ClientModInitializer {
         LOGGER.info("Returning to survival (world: {}, seed: {})", savedSingleplayerWorld, lastGameSeed);
 
         if (client.level != null) {
-            client.level.disconnect();
+            client.disconnectWithProgressScreen();
         }
-        client.disconnect();
 
         // Try reopening existing world first
         if (savedSingleplayerWorld != null) {
@@ -597,9 +599,8 @@ public class ArenaClashClient implements ClientModInitializer {
         LOGGER.info("Returning to title screen after game over");
 
         if (client.level != null) {
-            client.level.disconnect();
+            client.disconnectWithProgressScreen();
         }
-        client.disconnect();
 
         // Delete the ArenaClash singleplayer world
         String worldToDelete = savedSingleplayerWorld;
@@ -638,7 +639,7 @@ public class ArenaClashClient implements ClientModInitializer {
 
     public static void onCardSyncFromTcp(String cardsSnbt) {
         try {
-            CompoundTag nbt = net.minecraft.nbt.TagParser.parseTag(cardsSnbt);
+            CompoundTag nbt = net.minecraft.nbt.TagParser.parseCompoundFully(cardsSnbt);
             cardInventoryData = nbt;
 
             Minecraft client = Minecraft.getInstance();
@@ -703,7 +704,13 @@ public class ArenaClashClient implements ClientModInitializer {
             // Try to deserialize full JSON Component (preserves formatting)
             if (client.level != null) {
                 try {
-                    formatted = Component.Serializer.fromJson(broadcastJson, client.level.registryAccess());
+                    var registryOps = client.level.registryAccess()
+                            .createSerializationContext(com.mojang.serialization.JsonOps.INSTANCE);
+                    com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString(broadcastJson);
+                    formatted = net.minecraft.network.chat.ComponentSerialization.CODEC
+                            .parse(registryOps, json)
+                            .resultOrPartial(err -> {})
+                            .orElse(null);
                 } catch (Exception e) {
                     // Fallback below
                 }

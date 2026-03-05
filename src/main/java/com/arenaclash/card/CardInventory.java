@@ -56,9 +56,9 @@ public class CardInventory {
 
     public static CardInventory fromNbt(CompoundTag nbt) {
         CardInventory inv = new CardInventory();
-        ListTag list = nbt.getList("cards", 10); // 10 = CompoundTag type
+        ListTag list = nbt.getListOrEmpty("cards");
         for (int i = 0; i < list.size(); i++) {
-            inv.cards.add(MobCard.fromNbt(list.getCompound(i)));
+            inv.cards.add(MobCard.fromNbt(list.getCompoundOrEmpty(i)));
         }
         return inv;
     }

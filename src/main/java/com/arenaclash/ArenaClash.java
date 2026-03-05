@@ -38,7 +38,7 @@ public class ArenaClash implements ModInitializer {
 
             // Start TCP server on MC port + 1
             GameConfig cfg = GameConfig.get();
-            int mcPort = server.getServerPort();
+            int mcPort = server.getPort();
             if (mcPort <= 0) mcPort = 25565; // singleplayer/default
             int tcpPort = cfg.tcpPort > 0 ? cfg.tcpPort : mcPort + 1;
 

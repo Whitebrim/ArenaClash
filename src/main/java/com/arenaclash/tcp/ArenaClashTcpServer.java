@@ -290,7 +290,7 @@ public class ArenaClashTcpServer {
                                                 server.createCommandSourceStack().getPosition(),
                                                 server.createCommandSourceStack().getRotation(),
                                                 server.overworld(),
-                                                4, // permission level
+                                                net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER, // permission level
                                                 session.getPlayerName(),
                                                 net.minecraft.network.chat.Component.literal(session.getPlayerName()),
                                                 server,

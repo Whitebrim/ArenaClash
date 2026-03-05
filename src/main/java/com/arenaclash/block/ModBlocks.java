@@ -6,10 +6,12 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.core.Registry;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.resources.Identifier;
 
@@ -37,7 +39,9 @@ public class ModBlocks {
                 new BlockItem(CARD_UPGRADE_WORKBENCH, new Item.Properties()));
 
         // Add to creative tab
-        CreativeModeTabEvents.modifyOutput(CreativeModeTabs.FUNCTIONAL_BLOCKS).register((registeredEntries, output) ->
+        ResourceKey<CreativeModeTab> functionalBlocks = ResourceKey.create(Registries.CREATIVE_MODE_TAB,
+                Identifier.withDefaultNamespace("functional_blocks"));
+        CreativeModeTabEvents.modifyOutputEvent(functionalBlocks).register(output ->
                 output.accept(CARD_UPGRADE_WORKBENCH));
 
         ArenaClash.LOGGER.info("Arena Clash blocks registered");
