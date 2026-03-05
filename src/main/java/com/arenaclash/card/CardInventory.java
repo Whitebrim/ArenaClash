@@ -1,7 +1,7 @@
 package com.arenaclash.card;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 import java.util.*;
 
@@ -44,9 +44,9 @@ public class CardInventory {
         cards.clear();
     }
 
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
-        NbtList list = new NbtList();
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
+        ListTag list = new ListTag();
         for (MobCard card : cards) {
             list.add(card.toNbt());
         }
@@ -54,9 +54,9 @@ public class CardInventory {
         return nbt;
     }
 
-    public static CardInventory fromNbt(NbtCompound nbt) {
+    public static CardInventory fromNbt(CompoundTag nbt) {
         CardInventory inv = new CardInventory();
-        NbtList list = nbt.getList("cards", 10); // 10 = NbtCompound type
+        ListTag list = nbt.getList("cards", 10); // 10 = CompoundTag type
         for (int i = 0; i < list.size(); i++) {
             inv.cards.add(MobCard.fromNbt(list.getCompound(i)));
         }

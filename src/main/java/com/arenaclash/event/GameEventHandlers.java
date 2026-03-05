@@ -14,15 +14,15 @@ import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.Entity;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.core.BlockPos;
 
 /**
  * All server-side event handlers.
@@ -41,9 +41,9 @@ public class GameEventHandlers {
     // === Mob death → card creation ===
     private static void registerMobDeathHandler() {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
-            if (damageSource.getAttacker() instanceof ServerPlayerEntity player) {
+            if (damageSource.getEntity() instanceof ServerPlayer player) {
                 // Spawner mobs don't give cards
-                if (entity.getCommandTags().contains("arenaclash_spawner_mob")) {
+                if (entity.getTags().contains("arenaclash_spawner_mob")) {
                     return;
                 }
 
@@ -53,20 +53,20 @@ public class GameEventHandlers {
                 // Must be checked before the PassiveEntity baby filter because some hostile
                 // mobs (HoglinEntity) extend AnimalEntity → PassiveEntity.
                 boolean isBabyHostile = false;
-                if (entity instanceof net.minecraft.entity.mob.ZombieEntity zombie && zombie.isBaby()) {
+                if (entity instanceof net.minecraft.world.entity.monster.Zombie zombie && zombie.isBaby()) {
                     isBabyHostile = true;
-                } else if (entity instanceof net.minecraft.entity.mob.PiglinEntity piglin && piglin.isBaby()) {
+                } else if (entity instanceof net.minecraft.world.entity.monster.piglin.Piglin piglin && piglin.isBaby()) {
                     isBabyHostile = true;
-                } else if (entity instanceof net.minecraft.entity.mob.HoglinEntity hoglin && hoglin.isBaby()) {
+                } else if (entity instanceof net.minecraft.world.entity.monster.hoglin.Hoglin hoglin && hoglin.isBaby()) {
                     isBabyHostile = true;
-                } else if (entity instanceof net.minecraft.entity.mob.ZoglinEntity zoglin && zoglin.isBaby()) {
+                } else if (entity instanceof net.minecraft.world.entity.monster.Zoglin zoglin && zoglin.isBaby()) {
                     isBabyHostile = true;
                 }
 
                 if (isBabyHostile) {
                     // Special case: actual baby zombie (EntityType.ZOMBIE, not subtype) → baby_zombie card
-                    if (entity.getType() == net.minecraft.entity.EntityType.ZOMBIE
-                            && entity instanceof net.minecraft.entity.mob.ZombieEntity z && z.isBaby()) {
+                    if (entity.getType() == net.minecraft.world.entity.EntityType.ZOMBIE
+                            && entity instanceof net.minecraft.world.entity.monster.Zombie z && z.isBaby()) {
                         cardId = "baby_zombie";
                         if (MobCardRegistry.getById(cardId) == null) return;
                     } else {
@@ -81,8 +81,8 @@ public class GameEventHandlers {
                     }
                 } else {
                     // Skip baby passive mobs (baby cows, sheep, etc.) — no card for them
-                    if (entity instanceof net.minecraft.entity.passive.PassiveEntity passiveEntity) {
-                        if (passiveEntity.isBaby()) return;
+                    if (entity instanceof net.minecraft.world.entity.AgeableMob ageableMob) {
+                        if (ageableMob.isBaby()) return;
                     }
 
                     if (!MobCardRegistry.isRegistered(entity.getType())) return;
@@ -91,9 +91,9 @@ public class GameEventHandlers {
                     cardId = def.id();
 
                     // Slime/Magma Cube: give card based on killed size
-                    if (entity instanceof net.minecraft.entity.mob.SlimeEntity slime) {
+                    if (entity instanceof net.minecraft.world.entity.monster.Slime slime) {
                         int size = slime.getSize();
-                        String baseId = entity.getType() == net.minecraft.entity.EntityType.MAGMA_CUBE ? "magma_cube" : "slime";
+                        String baseId = entity.getType() == net.minecraft.world.entity.EntityType.MAGMA_CUBE ? "magma_cube" : "slime";
                         if (size >= 4) cardId = baseId + "_large";
                         else if (size >= 2) cardId = baseId + "_medium";
                         else cardId = baseId;
@@ -107,12 +107,12 @@ public class GameEventHandlers {
 
                 // Check Looting enchantment for bonus card chance (10%/20%/30% per level)
                 boolean bonusCard = false;
-                net.minecraft.item.ItemStack weapon = player.getMainHandStack();
+                net.minecraft.world.item.ItemStack weapon = player.getMainHandItem();
                 if (weapon != null && !weapon.isEmpty()) {
                     int lootingLevel = 0;
                     var enchants = weapon.getEnchantments();
                     for (var entry : enchants.getEnchantments()) {
-                        if (entry.matchesKey(net.minecraft.enchantment.Enchantments.LOOTING)) {
+                        if (entry.matchesKey(net.minecraft.world.item.enchantment.Enchantments.LOOTING)) {
                             lootingLevel = enchants.getLevel(entry);
                             break;
                         }
@@ -139,7 +139,7 @@ public class GameEventHandlers {
                         gm.onMobKilled(player, entity.getType());
                         if (bonusCard) {
                             gm.onMobKilled(player, entity.getType());
-                            player.sendMessage(Text.translatable("arenaclash.msg.looting_bonus", Text.translatable(def.translationKey())));
+                            player.sendSystemMessage(Component.translatable("arenaclash.msg.looting_bonus", Component.translatable(def.translationKey())));
                         }
                     }
                 }
@@ -152,7 +152,7 @@ public class GameEventHandlers {
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
             GameManager gm = GameManager.getInstance();
             if (!gm.isGameActive()) return;
-            PlayerGameData data = gm.getPlayerData(newPlayer.getUuid());
+            PlayerGameData data = gm.getPlayerData(newPlayer.getUUID());
             if (data == null) return;
             GamePhase phase = gm.getPhase();
             if (phase == GamePhase.SURVIVAL) {
@@ -168,27 +168,27 @@ public class GameEventHandlers {
     // === Prevent ALL attacks on arena mobs/structures (even by operators/creative) ===
     private static void registerAttackProtection() {
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (!(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
+            if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
 
             // Check if the entity is an arena entity - ALWAYS protect regardless of player status
-            if (entity.getCommandTags().contains("arenaclash_mob")
-                    || entity.getCommandTags().contains("arenaclash_structure")
-                    || entity.getCommandTags().contains("arenaclash_marker")
-                    || entity.getCommandTags().contains("arenaclash_opponent_marker")) {
-                serverPlayer.sendMessage(Text.translatable("arenaclash.msg.arena_no_attack"), true);
-                return ActionResult.FAIL;
+            if (entity.getTags().contains("arenaclash_mob")
+                    || entity.getTags().contains("arenaclash_structure")
+                    || entity.getTags().contains("arenaclash_marker")
+                    || entity.getTags().contains("arenaclash_opponent_marker")) {
+                serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.arena_no_attack"), true);
+                return InteractionResult.FAIL;
             }
 
             // Also prevent attacking other players on the arena world
             GameManager gm = GameManager.getInstance();
             if (gm.isGameActive()) {
-                ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
-                if (world == arenaWorld && entity instanceof ServerPlayerEntity) {
-                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.no_pvp"), true);
-                    return ActionResult.FAIL;
+                ServerLevel arenaWorld = gm.getWorldManager().getArenaWorld();
+                if (world == arenaWorld && entity instanceof ServerPlayer) {
+                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.no_pvp"), true);
+                    return InteractionResult.FAIL;
                 }
             }
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
     }
 
@@ -200,56 +200,56 @@ public class GameEventHandlers {
     private static void registerBlockInteraction() {
         // Block breaking - enforce build zones
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
-            if (!(player instanceof ServerPlayerEntity serverPlayer)) return true;
+            if (!(player instanceof ServerPlayer serverPlayer)) return true;
             return isBlockActionAllowed(serverPlayer, pos, false);
         });
 
         // Block placement / use - handle bell + enforce build zones
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            if (!(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
+            if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
 
             // Card Upgrade Workbench can ONLY be placed on the arena world during an active game
             // This check must run BEFORE isGameActive() gate, because in singleplayer (survival)
             // the game manager reports inactive, and we still need to block placement there.
-            if (player.getStackInHand(hand).getItem() instanceof net.minecraft.item.BlockItem bi
+            if (player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem bi
                     && bi.getBlock() instanceof com.arenaclash.block.CardUpgradeWorkbenchBlock) {
                 GameManager gmCheck = GameManager.getInstance();
-                ServerWorld arenaW = (gmCheck.isGameActive() && gmCheck.getWorldManager() != null)
+                ServerLevel arenaW = (gmCheck.isGameActive() && gmCheck.getWorldManager() != null)
                         ? gmCheck.getWorldManager().getArenaWorld() : null;
                 if (arenaW == null || world != arenaW) {
-                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.workbench_arena_only"), true);
+                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.workbench_arena_only"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
 
             GameManager gm = GameManager.getInstance();
-            if (!gm.isGameActive()) return ActionResult.PASS;
+            if (!gm.isGameActive()) return InteractionResult.PASS;
 
             BlockPos clickedPos = hitResult.getBlockPos();
-            ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
+            ServerLevel arenaWorld = gm.getWorldManager().getArenaWorld();
 
             // Check if player is on the arena world
             if (world != arenaWorld) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
 
             // Universal build zone protection: prevent interacting with blocks
             // in the opponent's build zone (chests, workbenches, etc.)
-            PlayerGameData interactData = gm.getPlayerData(serverPlayer.getUuid());
+            PlayerGameData interactData = gm.getPlayerData(serverPlayer.getUUID());
             if (interactData != null && gm.getPhase() == GamePhase.PREPARATION) {
                 TeamSide playerTeam = interactData.getTeam();
                 TeamSide opponentTeam = (playerTeam == TeamSide.PLAYER1) ? TeamSide.PLAYER2 : TeamSide.PLAYER1;
                 if (gm.getArenaManager().isInBuildZone(opponentTeam, clickedPos)) {
-                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.enemy_build_zone"), true);
+                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.enemy_build_zone"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
 
             // Check if clicking a bell block
-            if (world.getBlockState(clickedPos).isOf(Blocks.BELL)) {
-                PlayerGameData data = gm.getPlayerData(serverPlayer.getUuid());
+            if (world.getBlockState(clickedPos).is(Blocks.BELL)) {
+                PlayerGameData data = gm.getPlayerData(serverPlayer.getUUID());
                 if (data == null) {
-                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_in_game"), true);
+                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
                     return resyncAndFail(serverPlayer);
                 }
 
@@ -261,11 +261,11 @@ public class GameEventHandlers {
 
                     // Play bell sound
                     world.playSound(null, clickedPos.getX(), clickedPos.getY(), clickedPos.getZ(),
-                            SoundEvents.BLOCK_BELL_USE, SoundCategory.BLOCKS, 2.0f, 1.0f);
+                            SoundEvents.BELL_BLOCK, SoundSource.BLOCKS, 2.0f, 1.0f);
 
-                    return ActionResult.SUCCESS;
+                    return InteractionResult.SUCCESS;
                 } else if (bellTeam != null) {
-                    serverPlayer.sendMessage(Text.translatable("arenaclash.msg.not_your_bell"), true);
+                    serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.not_your_bell"), true);
                     return resyncAndFail(serverPlayer);
                 }
             }
@@ -278,16 +278,16 @@ public class GameEventHandlers {
                 TeamSide pTeam = interactData.getTeam();
                 if (gm.getArenaManager().isInBuildZone(pTeam, clickedPos)) {
                     // The clicked block is in our build zone — always allow interaction
-                    return ActionResult.PASS;
+                    return InteractionResult.PASS;
                 }
             }
 
-            BlockPos placePos = clickedPos.offset(hitResult.getSide());
+            BlockPos placePos = clickedPos.relative(hitResult.getDirection());
 
             if (!isBlockActionAllowed(serverPlayer, placePos, true)) {
                 return resyncAndFail(serverPlayer);
             }
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
     }
 
@@ -297,28 +297,28 @@ public class GameEventHandlers {
      * the item count, but the server rejects it. Without resync, the client shows
      * the wrong item count until the player interacts with their inventory.
      */
-    private static ActionResult resyncAndFail(ServerPlayerEntity player) {
-        player.currentScreenHandler.syncState();
-        return ActionResult.FAIL;
+    private static InteractionResult resyncAndFail(ServerPlayer player) {
+        player.containerMenu.broadcastChanges();
+        return InteractionResult.FAIL;
     }
 
     /**
      * Check if a player is allowed to break/place at this position.
      * Protects arena world from ALL players, including operators and non-game players.
      */
-    private static boolean isBlockActionAllowed(ServerPlayerEntity player, BlockPos pos, boolean isPlace) {
+    private static boolean isBlockActionAllowed(ServerPlayer player, BlockPos pos, boolean isPlace) {
         GameManager gm = GameManager.getInstance();
         if (!gm.isGameActive()) return true;
 
-        ServerWorld arenaWorld = gm.getWorldManager().getArenaWorld();
-        if (arenaWorld == null || player.getServerWorld() != arenaWorld) return true;
+        ServerLevel arenaWorld = gm.getWorldManager().getArenaWorld();
+        if (arenaWorld == null || player.serverLevel() != arenaWorld) return true;
 
         // On arena world: check if player is part of the game
-        PlayerGameData data = gm.getPlayerData(player.getUuid());
+        PlayerGameData data = gm.getPlayerData(player.getUUID());
 
         // Non-game players (including operators) cannot modify the arena AT ALL
         if (data == null) {
-            player.sendMessage(Text.translatable("arenaclash.msg.not_in_game"), true);
+            player.displayClientMessage(Component.translatable("arenaclash.msg.not_in_game"), true);
             return false;
         }
 
@@ -326,14 +326,14 @@ public class GameEventHandlers {
 
         // During battle: no building for anyone
         if (phase == GamePhase.BATTLE || phase == GamePhase.ROUND_END || phase == GamePhase.GAME_OVER) {
-            player.sendMessage(Text.translatable("arenaclash.msg.no_modify_battle"), true);
+            player.displayClientMessage(Component.translatable("arenaclash.msg.no_modify_battle"), true);
             return false;
         }
 
         // During preparation: only in build zone
         if (phase == GamePhase.PREPARATION) {
             // Don't allow breaking bells
-            if (player.getServerWorld().getBlockState(pos).isOf(Blocks.BELL)) {
+            if (player.serverLevel().getBlockState(pos).is(Blocks.BELL)) {
                 return false;
             }
 
@@ -342,7 +342,7 @@ public class GameEventHandlers {
             // Check build zone
             if (cfg.buildZonesEnabled) {
                 if (!gm.getArenaManager().isInBuildZone(data.getTeam(), pos)) {
-                    player.sendMessage(Text.translatable("arenaclash.msg.build_zone_only"), true);
+                    player.displayClientMessage(Component.translatable("arenaclash.msg.build_zone_only"), true);
                     return false;
                 }
             }
@@ -350,7 +350,7 @@ public class GameEventHandlers {
             // Don't allow breaking structure blocks
             for (var structure : gm.getArenaManager().getStructures()) {
                 if (structure.getBoundingBox().contains(pos.getX(), pos.getY(), pos.getZ())) {
-                    player.sendMessage(Text.translatable("arenaclash.msg.no_modify_structures"), true);
+                    player.displayClientMessage(Component.translatable("arenaclash.msg.no_modify_structures"), true);
                     return false;
                 }
             }
@@ -365,7 +365,7 @@ public class GameEventHandlers {
     // === Player joins MC server ===
     private static void registerPlayerJoinHandler() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
+            ServerPlayer player = handler.getPlayer();
             GameManager gm = GameManager.getInstance();
             if (gm.isGameActive()) {
                 server.execute(() -> {
@@ -376,19 +376,19 @@ public class GameEventHandlers {
 
         // Save player inventory on disconnect so reconnection restores latest state
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
+            ServerPlayer player = handler.getPlayer();
             GameManager gm = GameManager.getInstance();
             if (!gm.isGameActive()) return;
 
             var tcpServer = com.arenaclash.ArenaClash.getTcpServer();
             if (tcpServer == null) return;
-            var session = tcpServer.getSession(player.getUuid());
+            var session = tcpServer.getSession(player.getUUID());
             if (session == null) return;
 
             try {
-                net.minecraft.nbt.NbtCompound invNbt = new net.minecraft.nbt.NbtCompound();
-                net.minecraft.nbt.NbtList items = new net.minecraft.nbt.NbtList();
-                player.getInventory().writeNbt(items);
+                net.minecraft.nbt.CompoundTag invNbt = new net.minecraft.nbt.CompoundTag();
+                net.minecraft.nbt.ListTag items = new net.minecraft.nbt.ListTag();
+                player.getInventory().save(items);
                 invNbt.put("Items", items);
                 String invSnbt = invNbt.toString();
                 session.setSavedInventoryJson(invSnbt);
@@ -403,7 +403,7 @@ public class GameEventHandlers {
     private static void registerC2SPacketHandlers() {
         ServerPlayNetworking.registerGlobalReceiver(NetworkHandler.PlaceCardRequest.ID,
                 (payload, context) -> {
-                    ServerPlayerEntity player = context.player();
+                    ServerPlayer player = context.player();
                     context.server().execute(() -> {
                         try {
                             java.util.UUID cardId = java.util.UUID.fromString(payload.cardId());
@@ -411,21 +411,21 @@ public class GameEventHandlers {
                                     com.arenaclash.arena.Lane.LaneId.valueOf(payload.laneId());
                             GameManager.getInstance().handlePlaceCard(player, cardId, laneId, payload.slotIndex());
                         } catch (Exception e) {
-                            player.sendMessage(Text.translatable("arenaclash.msg.invalid_request"));
+                            player.sendSystemMessage(Component.translatable("arenaclash.msg.invalid_request"));
                         }
                     });
                 });
 
         ServerPlayNetworking.registerGlobalReceiver(NetworkHandler.RemoveCardRequest.ID,
                 (payload, context) -> {
-                    ServerPlayerEntity player = context.player();
+                    ServerPlayer player = context.player();
                     context.server().execute(() -> {
                         try {
                             com.arenaclash.arena.Lane.LaneId laneId =
                                     com.arenaclash.arena.Lane.LaneId.valueOf(payload.laneId());
                             GameManager.getInstance().handleRemoveCard(player, laneId, payload.slotIndex());
                         } catch (Exception e) {
-                            player.sendMessage(Text.translatable("arenaclash.msg.invalid_request"));
+                            player.sendSystemMessage(Component.translatable("arenaclash.msg.invalid_request"));
                         }
                     });
                 });
@@ -439,9 +439,9 @@ public class GameEventHandlers {
 
         ServerPlayNetworking.registerGlobalReceiver(NetworkHandler.OpenCardGui.ID,
                 (payload, context) -> {
-                    ServerPlayerEntity player = context.player();
+                    ServerPlayer player = context.player();
                     context.server().execute(() -> {
-                        var data = GameManager.getInstance().getPlayerData(player.getUuid());
+                        var data = GameManager.getInstance().getPlayerData(player.getUUID());
                         if (data != null) {
                             ServerPlayNetworking.send(player,
                                     new NetworkHandler.CardInventorySync(data.getCardInventory().toNbt()));

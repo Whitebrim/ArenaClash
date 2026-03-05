@@ -13,19 +13,19 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
-import net.minecraft.client.network.ServerAddress;
-import net.minecraft.client.network.ServerInfo;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.multiplayer.ConnectScreen;
+import net.minecraft.client.multiplayer.ServerAddress;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.InputConstants;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,8 +41,8 @@ public class ArenaClashClient implements ClientModInitializer {
     public static String currentPhase = "LOBBY";
     public static int timerTicks = 0;
     public static int currentRound = 0;
-    public static NbtCompound cardInventoryData = null;
-    public static NbtCompound deploymentSlotData = null;
+    public static CompoundTag cardInventoryData = null;
+    public static CompoundTag deploymentSlotData = null;
 
     // TCP client
     private static ArenaClashTcpClient tcpClient;
@@ -61,7 +61,7 @@ public class ArenaClashClient implements ClientModInitializer {
     private static int lastMcPort = 0;
 
     // Key bindings
-    private static KeyBinding openCardsKey;
+    private static KeyMapping openCardsKey;
 
     // Track singleplayer world name for return trips
     private static String savedSingleplayerWorld = null;
@@ -82,7 +82,7 @@ public class ArenaClashClient implements ClientModInitializer {
     // Last sent equipment SNBT to avoid resending unchanged data
     private static String lastEquipmentSnbt = null;
 
-    // Config file for persistent IP address 
+    // Config file for persistent IP address
     private static final String CONFIG_FILE = "arenaclash_client.txt";
 
     // Stored game seed for Continue button during SURVIVAL
@@ -92,12 +92,12 @@ public class ArenaClashClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        openCardsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.arenaclash.open_cards", InputUtil.Type.KEYSYM,
+        openCardsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.arenaclash.open_cards", InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_TAB, "category.arenaclash"
         ));
 
-        // Load saved server address 
+        // Load saved server address
         loadSavedAddress();
 
         registerMcPacketHandlers();
@@ -105,8 +105,8 @@ public class ArenaClashClient implements ClientModInitializer {
         registerWorkbenchInteraction();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
-        HudRenderCallback.EVENT.register((drawContext, renderTickCounter) ->
-                GameHudRenderer.render(drawContext, renderTickCounter));
+        HudRenderCallback.EVENT.register((guiGraphics, deltaTracker) ->
+                GameHudRenderer.render(guiGraphics, deltaTracker));
     }
 
     /**
@@ -140,7 +140,7 @@ public class ArenaClashClient implements ClientModInitializer {
                                     tcp.sendChat("/ac " + args);
                                     return 1;
                                 }
-                                ctx.getSource().sendFeedback(Text.translatable("arenaclash.msg.not_connected"));
+                                ctx.getSource().sendFeedback(Component.translatable("arenaclash.msg.not_connected"));
                                 return 0;
                             }))
                     .executes(ctx -> {
@@ -149,13 +149,13 @@ public class ArenaClashClient implements ClientModInitializer {
                             tcp.sendChat("/ac");
                             return 1;
                         }
-                        ctx.getSource().sendFeedback(Text.translatable("arenaclash.msg.not_connected"));
+                        ctx.getSource().sendFeedback(Component.translatable("arenaclash.msg.not_connected"));
                         return 0;
                     }));
         });
     }
 
-    private void onTick(MinecraftClient client) {
+    private void onTick(Minecraft client) {
         // Process TCP messages
         if (tcpClient != null && tcpClient.isConnected()) {
             tcpClient.processIncoming();
@@ -174,7 +174,7 @@ public class ArenaClashClient implements ClientModInitializer {
             }
         }
 
-        // Forward singleplayer chat messages via TCP 
+        // Forward singleplayer chat messages via TCP
         if (tcpClient != null && tcpClient.isConnected()) {
             String chatMsg;
             while ((chatMsg = com.arenaclash.tcp.SingleplayerBridge.pendingChatMessages.poll()) != null) {
@@ -193,7 +193,7 @@ public class ArenaClashClient implements ClientModInitializer {
         // Send player state to opponent during survival phase (every 4 ticks)
         if (tcpClient != null && tcpClient.isConnected()
                 && "SURVIVAL".equals(currentPhase)
-                && client.player != null && client.isInSingleplayer()) {
+                && client.player != null && client.isLocalServer()) {
             playerStateTicks++;
             if (playerStateTicks >= 4) {
                 playerStateTicks = 0;
@@ -202,7 +202,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
 
         // Tick opponent marker during survival phase
-        if ("SURVIVAL".equals(currentPhase) && client.world != null) {
+        if ("SURVIVAL".equals(currentPhase) && client.level != null) {
             OpponentMarkerManager.tick();
         } else {
             // Remove marker when not in survival
@@ -248,13 +248,13 @@ public class ArenaClashClient implements ClientModInitializer {
             returnToSurvival(client);
         }
 
-        // Handle world creation ticks 
+        // Handle world creation ticks
         WorldCreationHelper.tickPending(client);
 
         // Track singleplayer world name
-        if (client.isInSingleplayer() && client.getServer() != null
+        if (client.isLocalServer() && client.getSingleplayerServer() != null
                 && "SURVIVAL".equals(currentPhase)) {
-            String levelName = client.getServer().getSaveProperties().getLevelName();
+            String levelName = client.getSingleplayerServer().getWorldData().getLevelName();
             if (levelName != null && levelName.startsWith(WorldCreationHelper.WORLD_NAME_PREFIX)) {
                 WorldCreationHelper.setCurrentWorldDirName(levelName);
                 savedSingleplayerWorld = levelName;
@@ -262,7 +262,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
 
         // Send WORLD_READY when singleplayer world is loaded and game is active
-        if (client.isInSingleplayer() && client.world != null && "SURVIVAL".equals(currentPhase)) {
+        if (client.isLocalServer() && client.level != null && "SURVIVAL".equals(currentPhase)) {
             if (!worldReadySent && tcpClient != null && tcpClient.isConnected()) {
                 worldReadySent = true;
                 tcpClient.send(SyncProtocol.makeMessage("WORLD_READY"));
@@ -275,21 +275,21 @@ public class ArenaClashClient implements ClientModInitializer {
                     // Must restore on the INTEGRATED SERVER side, not the client side.
                     // The server is authoritative for inventory; client-only changes get
                     // overwritten by server sync packets.
-                    var integratedServer = client.getServer();
+                    var integratedServer = client.getSingleplayerServer();
                     if (integratedServer != null && integratedServer.isRunning()) {
                         final String snbt = invSnbt;
                         integratedServer.execute(() -> {
                             try {
-                                var serverPlayer = integratedServer.getPlayerManager()
-                                        .getPlayer(client.player.getUuid());
+                                var serverPlayer = integratedServer.getPlayerList()
+                                        .getPlayer(client.player.getUUID());
                                 if (serverPlayer != null) {
-                                    net.minecraft.nbt.NbtCompound invNbt =
-                                            net.minecraft.nbt.StringNbtReader.parse(snbt);
-                                    net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
-                                    serverPlayer.getInventory().clear();
-                                    serverPlayer.getInventory().readNbt(items);
-                                    serverPlayer.currentScreenHandler.sendContentUpdates();
-                                    serverPlayer.playerScreenHandler.sendContentUpdates();
+                                    net.minecraft.nbt.CompoundTag invNbt =
+                                            net.minecraft.nbt.TagParser.parseTag(snbt);
+                                    net.minecraft.nbt.ListTag items = invNbt.getList("Items", 10);
+                                    serverPlayer.getInventory().clearContent();
+                                    serverPlayer.getInventory().load(items);
+                                    serverPlayer.containerMenu.broadcastChanges();
+                                    serverPlayer.inventoryMenu.broadcastChanges();
                                 }
                             } catch (Exception e) {
                                 LOGGER.error("Failed to restore inventory on server side", e);
@@ -309,7 +309,7 @@ public class ArenaClashClient implements ClientModInitializer {
         // Auto-pause: check if client is paused (ESC menu) and send state changes
         if (tcpClient != null && tcpClient.isConnected()) {
             boolean currentlyPaused = client.isPaused()
-                    || (client.currentScreen instanceof net.minecraft.client.gui.screen.GameMenuScreen);
+                    || (client.screen instanceof net.minecraft.client.gui.screens.PauseScreen);
             if (currentlyPaused != lastPauseState) {
                 lastPauseState = currentlyPaused;
                 tcpClient.send(SyncProtocol.pauseState(currentlyPaused));
@@ -317,7 +317,7 @@ public class ArenaClashClient implements ClientModInitializer {
         }
 
         // Key bindings
-        while (openCardsKey.wasPressed()) {
+        while (openCardsKey.consumeClick()) {
             if ("PREPARATION".equals(currentPhase) && cardInventoryData != null) {
                 client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
             } else if (("SURVIVAL".equals(currentPhase) || "BATTLE".equals(currentPhase))
@@ -334,15 +334,15 @@ public class ArenaClashClient implements ClientModInitializer {
     /**
      * Collect and send player's current position + equipment to opponent via TCP.
      */
-    private static void sendPlayerState(MinecraftClient client) {
-        if (client.player == null || client.world == null || tcpClient == null) return;
+    private static void sendPlayerState(Minecraft client) {
+        if (client.player == null || client.level == null || tcpClient == null) return;
 
         double x = client.player.getX();
         double y = client.player.getY();
         double z = client.player.getZ();
-        float yaw = client.player.getYaw();
-        float pitch = client.player.getPitch();
-        String dimension = client.world.getRegistryKey().getValue().toString();
+        float yaw = client.player.getYRot();
+        float pitch = client.player.getXRot();
+        String dimension = client.level.dimension().location().toString();
 
         // Build equipment SNBT
         String equipmentSnbt = buildEquipmentSnbt(client);
@@ -360,41 +360,41 @@ public class ArenaClashClient implements ClientModInitializer {
     /**
      * Build an SNBT string representing the player's current equipment.
      */
-    private static String buildEquipmentSnbt(MinecraftClient client) {
+    private static String buildEquipmentSnbt(Minecraft client) {
         if (client.player == null) return "{}";
         try {
-            net.minecraft.nbt.NbtCompound eq = new net.minecraft.nbt.NbtCompound();
-            var registryOps = client.world.getRegistryManager().getOps(net.minecraft.nbt.NbtOps.INSTANCE);
+            net.minecraft.nbt.CompoundTag eq = new net.minecraft.nbt.CompoundTag();
+            var registryOps = client.level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
 
             // Main hand
-            net.minecraft.item.ItemStack mainHand = client.player.getMainHandStack();
+            net.minecraft.world.item.ItemStack mainHand = client.player.getMainHandItem();
             if (mainHand != null && !mainHand.isEmpty()) {
                 eq.putString("MainHand", encodeItemStack(mainHand, registryOps));
             }
 
             // Off hand
-            net.minecraft.item.ItemStack offHand = client.player.getOffHandStack();
+            net.minecraft.world.item.ItemStack offHand = client.player.getOffhandItem();
             if (offHand != null && !offHand.isEmpty()) {
                 eq.putString("OffHand", encodeItemStack(offHand, registryOps));
             }
 
             // Armor slots
-            net.minecraft.item.ItemStack helmet = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.HEAD);
+            net.minecraft.world.item.ItemStack helmet = client.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD);
             if (helmet != null && !helmet.isEmpty()) {
                 eq.putString("Helmet", encodeItemStack(helmet, registryOps));
             }
 
-            net.minecraft.item.ItemStack chest = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST);
+            net.minecraft.world.item.ItemStack chest = client.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
             if (chest != null && !chest.isEmpty()) {
                 eq.putString("Chestplate", encodeItemStack(chest, registryOps));
             }
 
-            net.minecraft.item.ItemStack legs = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.LEGS);
+            net.minecraft.world.item.ItemStack legs = client.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS);
             if (legs != null && !legs.isEmpty()) {
                 eq.putString("Leggings", encodeItemStack(legs, registryOps));
             }
 
-            net.minecraft.item.ItemStack boots = client.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.FEET);
+            net.minecraft.world.item.ItemStack boots = client.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET);
             if (boots != null && !boots.isEmpty()) {
                 eq.putString("Boots", encodeItemStack(boots, registryOps));
             }
@@ -405,10 +405,10 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
-    private static String encodeItemStack(net.minecraft.item.ItemStack stack,
-                                           com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops) {
+    private static String encodeItemStack(net.minecraft.world.item.ItemStack stack,
+                                           com.mojang.serialization.DynamicOps<net.minecraft.nbt.Tag> ops) {
         try {
-            return net.minecraft.item.ItemStack.CODEC.encodeStart(ops, stack)
+            return net.minecraft.world.item.ItemStack.CODEC.encodeStart(ops, stack)
                     .resultOrPartial(err -> {})
                     .map(Object::toString)
                     .orElse("{}");
@@ -426,9 +426,9 @@ public class ArenaClashClient implements ClientModInitializer {
             tcpClient.disconnect();
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        String playerName = mc.getSession().getUsername();
-        var profileId = mc.getSession().getUuidOrNull();
+        Minecraft mc = Minecraft.getInstance();
+        String playerName = mc.getUser().getName();
+        var profileId = mc.getUser().getProfileId();
         if (profileId == null) {
             LOGGER.error("No player UUID available");
             return false;
@@ -505,15 +505,15 @@ public class ArenaClashClient implements ClientModInitializer {
         WorldCreationHelper.scheduleWorldCreation(seed);
     }
 
-    private void connectToMcServer(MinecraftClient client, String host, int port) {
+    private void connectToMcServer(Minecraft client, String host, int port) {
         LOGGER.info("Connecting to MC server {}:{} for arena phase", host, port);
 
-        if (client.isInSingleplayer() && client.getServer() != null) {
-            savedSingleplayerWorld = client.getServer().getSaveProperties().getLevelName();
+        if (client.isLocalServer() && client.getSingleplayerServer() != null) {
+            savedSingleplayerWorld = client.getSingleplayerServer().getWorldData().getLevelName();
         }
 
-        if (client.world != null) {
-            client.world.disconnect();
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -521,19 +521,19 @@ public class ArenaClashClient implements ClientModInitializer {
             try { Thread.sleep(500); } catch (InterruptedException ignored) {}
             client.execute(() -> {
                 ServerAddress address = new ServerAddress(host, port);
-                ServerInfo info = new ServerInfo("Arena Clash", address.toString(), ServerInfo.ServerType.OTHER);
+                ServerData info = new ServerData("Arena Clash", address.toString(), ServerData.Type.OTHER);
                 ConnectScreen.connect(
-                        client.currentScreen != null ? client.currentScreen : new TitleScreen(),
+                        client.screen != null ? client.screen : new TitleScreen(),
                         client, address, info, false, null);
             });
         }, "ArenaClash-ConnectMC").start();
     }
 
-    private void returnToSingleplayer(MinecraftClient client) {
+    private void returnToSingleplayer(Minecraft client) {
         LOGGER.info("Returning to singleplayer (world: {})", savedSingleplayerWorld);
 
-        if (client.world != null) {
-            client.world.disconnect();
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -542,7 +542,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                 client.execute(() -> {
                     try {
-                        client.createIntegratedServerLoader().start(savedSingleplayerWorld, () -> {});
+                        client.createWorldOpenFlows().openWorld(savedSingleplayerWorld, () -> {});
                     } catch (Exception e) {
                         LOGGER.error("Failed to re-open singleplayer world", e);
                         client.setScreen(new TitleScreen());
@@ -558,11 +558,11 @@ public class ArenaClashClient implements ClientModInitializer {
      * Return to survival world from title screen (Continue button during SURVIVAL).
      * If the world exists, reopen it. Otherwise, create it using stored game seed.
      */
-    private void returnToSurvival(MinecraftClient client) {
+    private void returnToSurvival(Minecraft client) {
         LOGGER.info("Returning to survival (world: {}, seed: {})", savedSingleplayerWorld, lastGameSeed);
 
-        if (client.world != null) {
-            client.world.disconnect();
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -572,7 +572,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                 client.execute(() -> {
                     try {
-                        client.createIntegratedServerLoader().start(savedSingleplayerWorld, () -> {});
+                        client.createWorldOpenFlows().openWorld(savedSingleplayerWorld, () -> {});
                     } catch (Exception e) {
                         LOGGER.error("Failed to re-open singleplayer world, creating new", e);
                         // Fallback: create new world
@@ -593,11 +593,11 @@ public class ArenaClashClient implements ClientModInitializer {
         }
     }
 
-    private void returnToTitleScreen(MinecraftClient client) {
+    private void returnToTitleScreen(Minecraft client) {
         LOGGER.info("Returning to title screen after game over");
 
-        if (client.world != null) {
-            client.world.disconnect();
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -638,15 +638,15 @@ public class ArenaClashClient implements ClientModInitializer {
 
     public static void onCardSyncFromTcp(String cardsSnbt) {
         try {
-            NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(cardsSnbt);
+            CompoundTag nbt = net.minecraft.nbt.TagParser.parseTag(cardsSnbt);
             cardInventoryData = nbt;
 
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.currentScreen instanceof CardScreen) {
+            Minecraft client = Minecraft.getInstance();
+            if (client.screen instanceof CardScreen) {
                 client.setScreen(new CardScreen(cardInventoryData));
-            } else if (client.currentScreen instanceof DeploymentScreen && cardInventoryData != null) {
+            } else if (client.screen instanceof DeploymentScreen && cardInventoryData != null) {
                 client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
-            } else if (client.currentScreen instanceof CardUpgradeScreen && cardInventoryData != null) {
+            } else if (client.screen instanceof CardUpgradeScreen && cardInventoryData != null) {
                 client.setScreen(new CardUpgradeScreen(cardInventoryData));
             }
         } catch (Exception e) {
@@ -656,13 +656,13 @@ public class ArenaClashClient implements ClientModInitializer {
 
     /** Chat relay from other player — formatted identically to vanilla multiplayer chat. */
     public static void onChatRelayFromTcp(String sender, String message) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
             // "chat.type.text" is the vanilla key: <%s> %s → <PlayerName> message
             // Using it gives EXACT vanilla formatting including hover events.
-            Text formatted = Text.translatable("chat.type.text",
-                    Text.literal(sender), Text.literal(message));
-            client.player.sendMessage(formatted);
+            Component formatted = Component.translatable("chat.type.text",
+                    Component.literal(sender), Component.literal(message));
+            client.player.sendSystemMessage(formatted);
         }
     }
 
@@ -675,45 +675,45 @@ public class ArenaClashClient implements ClientModInitializer {
 
     /** Opponent obtained a card — display colored notification in chat. */
     public static void onOpponentCardObtainedFromTcp(String sender, String mobTranslationKey, int count, boolean isBonus) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            String mobName = net.minecraft.client.resource.language.I18n.translate(mobTranslationKey);
+            String mobName = net.minecraft.client.resources.language.I18n.get(mobTranslationKey);
 
             // §d (light purple) for opponent card notifications
-            Text msg;
+            Component msg;
             if (isBonus) {
-                msg = Text.translatable("arenaclash.msg.opponent_card_bonus", sender, mobName, String.valueOf(count));
+                msg = Component.translatable("arenaclash.msg.opponent_card_bonus", sender, mobName, String.valueOf(count));
             } else {
-                msg = Text.translatable("arenaclash.msg.opponent_card", sender, mobName, String.valueOf(count));
+                msg = Component.translatable("arenaclash.msg.opponent_card", sender, mobName, String.valueOf(count));
             }
-            client.player.sendMessage(msg);
+            client.player.sendSystemMessage(msg);
         }
     }
 
     /**
      * Broadcast relay from opponent (achievements, deaths).
-     * The text is JSON-serialized by Text.Serialization on the sender's integrated
+     * The text is JSON-serialized by Component.Serializer on the sender's integrated
      * server, preserving all vanilla formatting: colours, hover events on advancement
      * names, translatable components, etc.
      */
     public static void onBroadcastRelayFromTcp(String sender, String broadcastJson) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            Text formatted = null;
-            // Try to deserialize full JSON Text (preserves formatting)
-            if (client.world != null) {
+            Component formatted = null;
+            // Try to deserialize full JSON Component (preserves formatting)
+            if (client.level != null) {
                 try {
-                    formatted = Text.Serialization.fromJson(broadcastJson, client.world.getRegistryManager());
+                    formatted = Component.Serializer.fromJson(broadcastJson, client.level.registryAccess());
                 } catch (Exception e) {
                     // Fallback below
                 }
             }
             if (formatted != null) {
-                client.player.sendMessage(formatted);
+                client.player.sendSystemMessage(formatted);
             } else {
                 // Fallback: display as yellow system message
-                client.player.sendMessage(Text.literal(broadcastJson)
-                        .styled(s -> s.withColor(net.minecraft.util.Formatting.YELLOW)));
+                client.player.sendSystemMessage(Component.literal(broadcastJson)
+                        .withStyle(net.minecraft.ChatFormatting.YELLOW));
             }
         }
     }
@@ -731,7 +731,7 @@ public class ArenaClashClient implements ClientModInitializer {
         // Update singleplayer bridge flag
         com.arenaclash.tcp.SingleplayerBridge.survivalPhaseActive = "SURVIVAL".equals(phase);
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         // Trigger appropriate action based on current phase
         if ("SURVIVAL".equals(phase)) {
             // Need to be in singleplayer world
@@ -751,7 +751,7 @@ public class ArenaClashClient implements ClientModInitializer {
     }
 
     // =========================================================================
-    // IP ADDRESS PERSISTENCE 
+    // IP ADDRESS PERSISTENCE
     // =========================================================================
 
     private static void loadSavedAddress() {
@@ -795,12 +795,12 @@ public class ArenaClashClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.CardInventorySync.ID,
                 (payload, context) -> context.client().execute(() -> {
                     cardInventoryData = payload.data();
-                    MinecraftClient client = context.client();
-                    if (client.currentScreen instanceof CardScreen) {
+                    Minecraft client = context.client();
+                    if (client.screen instanceof CardScreen) {
                         client.setScreen(new CardScreen(cardInventoryData));
-                    } else if (client.currentScreen instanceof DeploymentScreen) {
+                    } else if (client.screen instanceof DeploymentScreen) {
                         client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
-                    } else if (client.currentScreen instanceof CardUpgradeScreen) {
+                    } else if (client.screen instanceof CardUpgradeScreen) {
                         client.setScreen(new CardUpgradeScreen(cardInventoryData));
                     }
                 }));
@@ -809,17 +809,17 @@ public class ArenaClashClient implements ClientModInitializer {
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
                         // Use mob translation key for localized name
-                        String translatedName = net.minecraft.client.resource.language.I18n.translate("arenaclash.mob." + payload.mobId());
-                        context.client().player.sendMessage(
-                                Text.translatable("arenaclash.msg.card_obtained_star", translatedName));
+                        String translatedName = net.minecraft.client.resources.language.I18n.get("arenaclash.mob." + payload.mobId());
+                        context.client().player.sendSystemMessage(
+                                Component.translatable("arenaclash.msg.card_obtained_star", translatedName));
                     }
                 }));
 
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.DeploymentSlotSync.ID,
                 (payload, context) -> context.client().execute(() -> {
                     deploymentSlotData = payload.data();
-                    MinecraftClient client = context.client();
-                    if (client.currentScreen instanceof DeploymentScreen && cardInventoryData != null) {
+                    Minecraft client = context.client();
+                    if (client.screen instanceof DeploymentScreen && cardInventoryData != null) {
                         client.setScreen(new DeploymentScreen(cardInventoryData, deploymentSlotData));
                     }
                 }));
@@ -827,7 +827,7 @@ public class ArenaClashClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(NetworkHandler.BattleResultNotify.ID,
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().player != null) {
-                        context.client().player.sendMessage(Text.translatable(
+                        context.client().player.sendSystemMessage(Component.translatable(
                                 "arenaclash.msg.battle_result", payload.resultType(), payload.winner()));
                     }
                 }));
@@ -837,7 +837,7 @@ public class ArenaClashClient implements ClientModInitializer {
                 (payload, context) -> context.client().execute(() -> {
                     if (cardInventoryData != null) {
                         CardUpgradeScreen.clearPersistedState();
-                        MinecraftClient.getInstance().setScreen(new CardUpgradeScreen(cardInventoryData));
+                        Minecraft.getInstance().setScreen(new CardUpgradeScreen(cardInventoryData));
                     }
                 }));
     }

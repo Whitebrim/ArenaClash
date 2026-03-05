@@ -1,7 +1,7 @@
 package com.arenaclash.card;
 
-import net.minecraft.entity.EntityType;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.List;
 
@@ -63,8 +63,8 @@ public record MobCardDefinition(
         return baseAttack * level;
     }
 
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
         nbt.putString("id", id);
         nbt.putString("displayName", displayName);
         nbt.putDouble("baseHP", baseHP);

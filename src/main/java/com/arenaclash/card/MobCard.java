@@ -1,6 +1,6 @@
 package com.arenaclash.card;
 
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.UUID;
 
@@ -58,16 +58,16 @@ public class MobCard {
         return def != null ? def.attackCooldown() : 20;
     }
 
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
-        nbt.putUuid("cardId", cardId);
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putUUID("cardId", cardId);
         nbt.putString("mobId", mobId);
         nbt.putInt("level", level);
         return nbt;
     }
 
-    public static MobCard fromNbt(NbtCompound nbt) {
-        UUID id = nbt.getUuid("cardId");
+    public static MobCard fromNbt(CompoundTag nbt) {
+        UUID id = nbt.getUUID("cardId");
         String mobId = nbt.getString("mobId");
         int level = nbt.getInt("level");
         return new MobCard(id, mobId, level);

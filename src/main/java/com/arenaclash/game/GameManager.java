@@ -15,16 +15,16 @@ import com.arenaclash.tcp.SyncProtocol;
 import com.arenaclash.tcp.TcpSession;
 import com.arenaclash.world.WorldManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.entity.EntityType;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.ChatFormatting;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.EntityType;
 
 import java.util.*;
 
@@ -110,10 +110,10 @@ public class GameManager {
     /**
      * Start game via /ac start command. Requires 2 TCP-connected players.
      */
-    public Text startGame() {
-        if (gameActive) return Text.translatable("arenaclash.cmd.game_already_active");
+    public Component startGame() {
+        if (gameActive) return Component.translatable("arenaclash.cmd.game_already_active");
         if (tcpServer == null || !tcpServer.hasTwoPlayers()) {
-            return Text.translatable("arenaclash.cmd.need_players", String.valueOf(tcpServer != null ? tcpServer.getConnectedCount() : 0));
+            return Component.translatable("arenaclash.cmd.need_players", String.valueOf(tcpServer != null ? tcpServer.getConnectedCount() : 0));
         }
 
         GameConfig cfg = GameConfig.get();
@@ -136,9 +136,9 @@ public class GameManager {
         ArenaBuilder.buildArena(worldManager.getArenaWorld());
 
         // Disable natural mob spawning on arena world
-        ServerWorld arenaWorld = worldManager.getArenaWorld();
+        ServerLevel arenaWorld = worldManager.getArenaWorld();
         if (arenaWorld != null) {
-            arenaWorld.getGameRules().get(net.minecraft.world.GameRules.DO_MOB_SPAWNING).set(false, server);
+            arenaWorld.getGameRules().get(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING).set(false, server);
         }
 
         // Reset stats
@@ -170,21 +170,21 @@ public class GameManager {
         tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.game_started"));
         tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.round_survival", "1"));
 
-        return Text.translatable("arenaclash.cmd.game_started_vs", p1.getPlayerName(), p2.getPlayerName());
+        return Component.translatable("arenaclash.cmd.game_started_vs", p1.getPlayerName(), p2.getPlayerName());
     }
 
     /**
      * Start game with MC players. Requires active TCP sessions for both.
      */
-    public Text startGame(ServerPlayerEntity player1, ServerPlayerEntity player2) {
+    public Component startGame(ServerPlayer player1, ServerPlayer player2) {
         if (tcpServer != null) {
-            TcpSession s1 = tcpServer.getSession(player1.getUuid());
-            TcpSession s2 = tcpServer.getSession(player2.getUuid());
+            TcpSession s1 = tcpServer.getSession(player1.getUUID());
+            TcpSession s2 = tcpServer.getSession(player2.getUUID());
             if (s1 != null && s2 != null) {
                 return startGame();
             }
         }
-        return Text.translatable("arenaclash.cmd.need_tcp");
+        return Component.translatable("arenaclash.cmd.need_tcp");
     }
 
     // ========================================================================
@@ -389,7 +389,7 @@ public class GameManager {
         // Show title screen messages on MC server
         if (server != null) {
             for (UUID uuid : playerOrder) {
-                ServerPlayerEntity player = getPlayer(uuid);
+                ServerPlayer player = getPlayer(uuid);
                 if (player == null) continue;
                 TeamSide playerTeam = playerTeams.get(uuid);
 
@@ -512,32 +512,32 @@ public class GameManager {
                 p1Name, p1Towers, p2Name, p2Towers);
     }
 
-    private void showTranslatableTitle(ServerPlayerEntity player, String titleKey, String subtitleKey, String... args) {
-        if (player == null || player.isDisconnected()) return;
+    private void showTranslatableTitle(ServerPlayer player, String titleKey, String subtitleKey, String... args) {
+        if (player == null || player.hasDisconnected()) return;
         try {
             String playerName = player.getName().getString();
             String titleJson = toTranslatableJson(titleKey);
             String subtitleJson = args.length > 0 ? toTranslatableJson(subtitleKey, args) : toTranslatableJson(subtitleKey);
             String timesCmd = "title " + playerName + " times 10 100 30";
 
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), timesCmd);
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), "title " + playerName + " subtitle " + subtitleJson);
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), "title " + playerName + " title " + titleJson);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), timesCmd);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), "title " + playerName + " subtitle " + subtitleJson);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), "title " + playerName + " title " + titleJson);
         } catch (Exception e) {
-            player.sendMessage(Text.translatable(titleKey));
+            player.sendSystemMessage(Component.translatable(titleKey));
             if (args.length > 0) {
-                player.sendMessage(Text.translatable(subtitleKey, (Object[]) args));
+                player.sendSystemMessage(Component.translatable(subtitleKey, (Object[]) args));
             } else {
-                player.sendMessage(Text.translatable(subtitleKey));
+                player.sendSystemMessage(Component.translatable(subtitleKey));
             }
         }
     }
 
-    private void showTitle(ServerPlayerEntity player, String title, String subtitle) {
-        if (player == null || player.isDisconnected()) return;
+    private void showTitle(ServerPlayer player, String title, String subtitle) {
+        if (player == null || player.hasDisconnected()) return;
         try {
             // Use Minecraft's built-in /title command via the server
             String playerName = player.getName().getString();
@@ -545,16 +545,16 @@ public class GameManager {
             String subtitleCmd = "title " + playerName + " subtitle " + toJsonText(subtitle);
             String timesCmd = "title " + playerName + " times 10 100 30";
 
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), timesCmd);
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), subtitleCmd);
-            server.getCommandManager().executeWithPrefix(
-                    server.getCommandSource().withSilent(), titleCmd);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), timesCmd);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), subtitleCmd);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack().withSuppressedOutput(), titleCmd);
         } catch (Exception e) {
             // Fallback to chat message
-            player.sendMessage(Text.literal(title));
-            player.sendMessage(Text.literal(subtitle));
+            player.sendSystemMessage(Component.literal(title));
+            player.sendSystemMessage(Component.literal(subtitle));
         }
     }
 
@@ -580,12 +580,12 @@ public class GameManager {
     private void broadcastMcTranslatable(String key, String... args) {
         if (server == null) return;
         for (java.util.UUID uuid : playerTeams.keySet()) {
-            ServerPlayerEntity player = getPlayer(uuid);
+            ServerPlayer player = getPlayer(uuid);
             if (player != null) {
                 if (args.length > 0) {
-                    player.sendMessage(Text.translatable(key, (Object[]) args));
+                    player.sendSystemMessage(Component.translatable(key, (Object[]) args));
                 } else {
-                    player.sendMessage(Text.translatable(key));
+                    player.sendSystemMessage(Component.translatable(key));
                 }
             }
         }
@@ -645,45 +645,45 @@ public class GameManager {
 
     // === Pause/Continue/Skip commands ===
 
-    public Text pauseGame() {
-        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
-        if (gamePaused) return Text.translatable("arenaclash.cmd.already_paused");
+    public Component pauseGame() {
+        if (!gameActive) return Component.translatable("arenaclash.cmd.no_game");
+        if (gamePaused) return Component.translatable("arenaclash.cmd.already_paused");
         gamePaused = true;
         tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.paused"));
-        return Text.translatable("arenaclash.cmd.game_paused");
+        return Component.translatable("arenaclash.cmd.game_paused");
     }
 
-    public Text continueGame() {
-        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
-        if (!gamePaused) return Text.translatable("arenaclash.cmd.not_paused");
+    public Component continueGame() {
+        if (!gameActive) return Component.translatable("arenaclash.cmd.no_game");
+        if (!gamePaused) return Component.translatable("arenaclash.cmd.not_paused");
         gamePaused = false;
         tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.resumed"));
-        return Text.translatable("arenaclash.cmd.game_resumed");
+        return Component.translatable("arenaclash.cmd.game_resumed");
     }
 
-    public Text skipPhase() {
-        if (!gameActive) return Text.translatable("arenaclash.cmd.no_game");
+    public Component skipPhase() {
+        if (!gameActive) return Component.translatable("arenaclash.cmd.no_game");
         switch (phase) {
             case SURVIVAL -> {
                 waitingForWorlds = false;
                 phaseTicksRemaining = 0;
                 tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.survival_skipped"));
                 startPreparationPhase();
-                return Text.translatable("arenaclash.cmd.skipped_to_prep");
+                return Component.translatable("arenaclash.cmd.skipped_to_prep");
             }
             case PREPARATION -> {
                 tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.prep_skipped"));
                 startBattlePhase();
-                return Text.translatable("arenaclash.cmd.skipped_to_battle");
+                return Component.translatable("arenaclash.cmd.skipped_to_battle");
             }
             case BATTLE -> {
                 tcpServer.broadcast(SyncProtocol.translatableMessage("arenaclash.tcp.battle_skipped"));
                 endRound(new ArenaManager.BattleResult(
                         ArenaManager.BattleResult.Type.ALL_MOBS_DEAD, null));
-                return Text.translatable("arenaclash.cmd.skipped_battle");
+                return Component.translatable("arenaclash.cmd.skipped_battle");
             }
             default -> {
-                return Text.translatable("arenaclash.cmd.cannot_skip", phase.toString());
+                return Component.translatable("arenaclash.cmd.cannot_skip", phase.toString());
             }
         }
     }
@@ -745,16 +745,16 @@ public class GameManager {
      * can restore it when they return to singleplayer.
      */
     private void saveAndSyncArenaInventories() {
-        ServerWorld arenaWorld = worldManager.getArenaWorld();
+        ServerLevel arenaWorld = worldManager.getArenaWorld();
         if (arenaWorld == null) return;
         for (UUID uuid : playerOrder) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             TcpSession session = tcpServer.getSession(uuid);
             if (player != null && session != null) {
                 try {
-                    NbtCompound invNbt = new NbtCompound();
-                    NbtList items = new NbtList();
-                    player.getInventory().writeNbt(items);
+                    CompoundTag invNbt = new CompoundTag();
+                    ListTag items = new ListTag();
+                    player.getInventory().save(items);
                     invNbt.put("Items", items);
                     String invSnbt = invNbt.toString();
                     session.setSavedInventoryJson(invSnbt);
@@ -854,12 +854,12 @@ public class GameManager {
      * Card is already added to TcpSession by the TCP server.
      * This is called from the client-side event → TCP → server.
      */
-    public void onMobKilled(ServerPlayerEntity player, EntityType<?> entityType) {
+    public void onMobKilled(ServerPlayer player, EntityType<?> entityType) {
         // This is for MC server-side kills (during arena testing, etc.)
         if (phase != GamePhase.SURVIVAL) return;
         if (tcpServer == null) return;
 
-        TcpSession session = tcpServer.getSession(player.getUuid());
+        TcpSession session = tcpServer.getSession(player.getUUID());
         if (session == null) return;
 
         MobCardDefinition def = MobCardRegistry.getByEntityType(entityType);
@@ -987,22 +987,22 @@ public class GameManager {
     }
 
     // Also handle MC-connected player actions during prep/battle
-    public void handlePlaceCard(ServerPlayerEntity player, UUID cardId, Lane.LaneId laneId, int slotIndex) {
+    public void handlePlaceCard(ServerPlayer player, UUID cardId, Lane.LaneId laneId, int slotIndex) {
         if (phase != GamePhase.PREPARATION) return;
-        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUuid()) : null;
+        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUUID()) : null;
         if (session == null) return;
         handleTcpPlaceCard(session, cardId.toString(), laneId.name(), slotIndex);
     }
 
-    public void handleRemoveCard(ServerPlayerEntity player, Lane.LaneId laneId, int slotIndex) {
+    public void handleRemoveCard(ServerPlayer player, Lane.LaneId laneId, int slotIndex) {
         if (phase != GamePhase.PREPARATION) return;
-        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUuid()) : null;
+        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUUID()) : null;
         if (session == null) return;
         handleTcpRemoveCard(session, laneId.name(), slotIndex);
     }
 
-    public void handleBellRing(ServerPlayerEntity player) {
-        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUuid()) : null;
+    public void handleBellRing(ServerPlayer player) {
+        TcpSession session = tcpServer != null ? tcpServer.getSession(player.getUUID()) : null;
         if (session == null) return;
         handleTcpBellRing(session);
     }
@@ -1019,13 +1019,13 @@ public class GameManager {
         }
     }
 
-    public void syncCards(ServerPlayerEntity player) {
+    public void syncCards(ServerPlayer player) {
         if (tcpServer == null) return;
-        TcpSession session = tcpServer.getSession(player.getUuid());
+        TcpSession session = tcpServer.getSession(player.getUUID());
         if (session != null) tcpServer.syncCards(session);
 
         // Also sync via MC networking if player is on server
-        PlayerGameData data = getPlayerData(player.getUuid());
+        PlayerGameData data = getPlayerData(player.getUUID());
         if (data != null) {
             ServerPlayNetworking.send(player,
                     new NetworkHandler.CardInventorySync(data.getCardInventory().toNbt()));
@@ -1034,16 +1034,16 @@ public class GameManager {
 
     private void syncDeploymentSlots(TcpSession session) {
         // Build slot data as JSON and send via TCP
-        NbtCompound slotsData = new NbtCompound();
+        CompoundTag slotsData = new CompoundTag();
         TeamSide team = session.getTeam();
         for (Lane.LaneId laneId : Lane.LaneId.values()) {
             Lane lane = arenaManager.getLanes().get(laneId);
             if (lane == null) continue;
-            NbtCompound laneNbt = new NbtCompound();
+            CompoundTag laneNbt = new CompoundTag();
             var slots = lane.getDeploymentSlots(team);
             for (int i = 0; i < slots.size(); i++) {
                 Lane.DeploymentSlot slot = slots.get(i);
-                NbtCompound slotNbt = new NbtCompound();
+                CompoundTag slotNbt = new CompoundTag();
                 slotNbt.putBoolean("empty", slot.isEmpty());
                 if (!slot.isEmpty()) {
                     slotNbt.put("card", slot.getPlacedCard().toNbt());
@@ -1058,7 +1058,7 @@ public class GameManager {
         }
 
         // Also send to MC-connected player
-        ServerPlayerEntity player = getPlayer(session.getPlayerUuid());
+        ServerPlayer player = getPlayer(session.getPlayerUuid());
         if (player != null) {
             ServerPlayNetworking.send(player, new NetworkHandler.DeploymentSlotSync(slotsData));
         }
@@ -1073,49 +1073,49 @@ public class GameManager {
      * Teleport them to the right spot on the arena.
      * Added safety checks to prevent disconnect packet errors.
      */
-    public void onPlayerJoinMc(ServerPlayerEntity player) {
+    public void onPlayerJoinMc(ServerPlayer player) {
         if (!gameActive) return;
-        TeamSide team = playerTeams.get(player.getUuid());
+        TeamSide team = playerTeams.get(player.getUUID());
         if (team == null) {
-            player.sendMessage(Text.translatable("arenaclash.msg.not_in_game_ac"));
+            player.sendSystemMessage(Component.translatable("arenaclash.msg.not_in_game_ac"));
             return;
         }
 
         if (phase == GamePhase.PREPARATION || phase == GamePhase.BATTLE || phase == GamePhase.GAME_OVER) {
             server.execute(() -> {
                 try {
-                    if (player.isDisconnected()) return;
+                    if (player.hasDisconnected()) return;
 
                     // Restore player inventory from singleplayer survival
-                    TcpSession session = tcpServer.getSession(player.getUuid());
+                    TcpSession session = tcpServer.getSession(player.getUUID());
                     if (session != null) {
                         String savedInv = session.getSavedInventoryJson();
                         if (savedInv != null && !savedInv.isEmpty()) {
                             try {
-                                net.minecraft.nbt.NbtCompound invNbt = net.minecraft.nbt.StringNbtReader.parse(savedInv);
-                                net.minecraft.nbt.NbtList items = invNbt.getList("Items", 10);
-                                player.getInventory().clear();
-                                player.getInventory().readNbt(items);
-                                player.currentScreenHandler.sendContentUpdates();
+                                net.minecraft.nbt.CompoundTag invNbt = net.minecraft.nbt.TagParser.parseTag(savedInv);
+                                net.minecraft.nbt.ListTag items = invNbt.getList("Items");
+                                player.getInventory().clearContent();
+                                player.getInventory().load(items);
+                                player.containerMenu.broadcastChanges();
                             } catch (Exception e) {
-                                player.getInventory().clear();
-                                player.currentScreenHandler.sendContentUpdates();
+                                player.getInventory().clearContent();
+                                player.containerMenu.broadcastChanges();
                             }
                         } else {
                             // No saved inventory - clear
-                            player.getInventory().clear();
-                            player.currentScreenHandler.sendContentUpdates();
+                            player.getInventory().clearContent();
+                            player.containerMenu.broadcastChanges();
                         }
                     } else {
-                        player.getInventory().clear();
-                        player.currentScreenHandler.sendContentUpdates();
+                        player.getInventory().clearContent();
+                        player.containerMenu.broadcastChanges();
                     }
 
                     worldManager.teleportToArena(player, team);
 
                     // Allow flying on the arena so players can spectate the battle
-                    player.getAbilities().allowFlying = true;
-                    player.sendAbilitiesUpdate();
+                    player.getAbilities().mayfly = true;
+                    player.onUpdateAbilities();
 
                     // Sync cards via MC networking too
                     if (session != null) {
@@ -1127,8 +1127,8 @@ public class GameManager {
                     if (server != null) {
                         server.execute(() -> {
                             try {
-                                if (!player.isDisconnected()) {
-                                    player.sendMessage(Text.translatable("arenaclash.msg.error_setup"));
+                                if (!player.hasDisconnected()) {
+                                    player.sendSystemMessage(Component.translatable("arenaclash.msg.error_setup"));
                                 }
                             } catch (Exception ignored) {}
                         });
@@ -1142,7 +1142,7 @@ public class GameManager {
     // RESET
     // ========================================================================
 
-    public Text resetGame() {
+    public Component resetGame() {
         arenaManager.fullReset();
         if (worldManager != null) {
             worldManager.kickAllPlayers();
@@ -1175,7 +1175,7 @@ public class GameManager {
             tcpServer.broadcastLobbyUpdate();
         }
 
-        return Text.translatable("arenaclash.cmd.game_reset_done");
+        return Component.translatable("arenaclash.cmd.game_reset_done");
     }
 
     // ========================================================================
@@ -1221,13 +1221,13 @@ public class GameManager {
     // UTILITY
     // ========================================================================
 
-    private ServerPlayerEntity getPlayer(UUID id) {
-        return server != null ? server.getPlayerManager().getPlayer(id) : null;
+    private ServerPlayer getPlayer(UUID id) {
+        return server != null ? server.getPlayerList().getPlayer(id) : null;
     }
 
-    private void broadcastMc(String message, Formatting color) {
+    private void broadcastMc(String message, ChatFormatting color) {
         if (server == null) return;
-        server.getPlayerManager().broadcast(Text.literal(message).formatted(color), false);
+        server.getPlayerList().broadcastSystemMessage(Component.literal(message).withStyle(color), false);
     }
 
     /**

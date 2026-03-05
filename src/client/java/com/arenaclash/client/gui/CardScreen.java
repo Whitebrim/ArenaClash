@@ -4,12 +4,12 @@ import com.arenaclash.card.CardInventory;
 import com.arenaclash.card.MobCard;
 import com.arenaclash.card.MobCardDefinition;
 import com.arenaclash.card.MobCardRegistry;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.resources.language.I18n;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
@@ -24,8 +24,8 @@ public class CardScreen extends Screen {
     private static final int CARD_WIDTH = 200;
     private static final int CARDS_PER_PAGE = 6;
 
-    public CardScreen(NbtCompound inventoryData) {
-        super(Text.translatable("arenaclash.screen.cards.title", "0"));
+    public CardScreen(CompoundTag inventoryData) {
+        super(Component.translatable("arenaclash.screen.cards.title", "0"));
         this.inventory = CardInventory.fromNbt(inventoryData);
     }
 
@@ -34,23 +34,23 @@ public class CardScreen extends Screen {
         super.init();
 
         // Scroll buttons
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("▲"), button -> {
+        this.addRenderableWidget(Button.builder(Component.literal("\u25B2"), button -> {
             if (scrollOffset > 0) scrollOffset--;
-        }).dimensions(width / 2 + CARD_WIDTH / 2 + 10, height / 2 - 80, 20, 20).build());
+        }).bounds(width / 2 + CARD_WIDTH / 2 + 10, height / 2 - 80, 20, 20).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("▼"), button -> {
+        this.addRenderableWidget(Button.builder(Component.literal("\u25BC"), button -> {
             if (scrollOffset < Math.max(0, inventory.getCardCount() - CARDS_PER_PAGE)) scrollOffset++;
-        }).dimensions(width / 2 + CARD_WIDTH / 2 + 10, height / 2 + 60, 20, 20).build());
+        }).bounds(width / 2 + CARD_WIDTH / 2 + 10, height / 2 + 60, 20, 20).build());
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // Draw dark semi-transparent background (renderBackground is overridden to no-op)
-        context.fill(0, 0, width, height, 0xC0101010);
+        guiGraphics.fill(0, 0, width, height, 0xC0101010);
 
         // Title
-        context.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.screen.cards.title", String.valueOf(inventory.getCardCount())),
+        guiGraphics.drawCenteredString(font,
+                I18n.get("arenaclash.screen.cards.title", String.valueOf(inventory.getCardCount())),
                 width / 2, 20, 0xFFFFFF);
 
         // Draw cards
@@ -66,34 +66,34 @@ public class CardScreen extends Screen {
             int y = startY + (i - scrollOffset) * (CARD_HEIGHT + 4);
 
             // Card background
-            context.fill(startX - 2, y - 2, startX + CARD_WIDTH + 2, y + CARD_HEIGHT + 2, 0x80000000);
+            guiGraphics.fill(startX - 2, y - 2, startX + CARD_WIDTH + 2, y + CARD_HEIGHT + 2, 0x80000000);
 
             // Card border (color by category)
             int borderColor = getCategoryColor(def.category());
-            context.drawBorder(startX - 2, y - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4, borderColor);
+            guiGraphics.renderOutline(startX - 2, y - 2, CARD_WIDTH + 4, CARD_HEIGHT + 4, borderColor);
 
             // Mob name + level
             String lvSuffix = com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card.getMobId())
-                    ? "" : " " + I18n.translate("arenaclash.screen.cards.lv", String.valueOf(card.getLevel()));
-            String name = "§f" + I18n.translate(def.translationKey()) + lvSuffix;
-            context.drawTextWithShadow(textRenderer, name, startX + 4, y + 2, 0xFFFFFF);
+                    ? "" : " " + I18n.get("arenaclash.screen.cards.lv", String.valueOf(card.getLevel()));
+            String name = "\u00A7f" + I18n.get(def.translationKey()) + lvSuffix;
+            guiGraphics.drawString(font, name, startX + 4, y + 2, 0xFFFFFF);
 
             // Stats
-            String stats = String.format("§c♥%.0f §a⚔%.0f §b⚡%.1f",
+            String stats = String.format("\u00A7c\u2665%.0f \u00A7a\u2694%.0f \u00A7b\u26A1%.1f",
                     card.getHP(), card.getAttack(), card.getSpeed());
-            context.drawTextWithShadow(textRenderer, stats, startX + 4, y + 14, 0xAAAAAA);
+            guiGraphics.drawString(font, stats, startX + 4, y + 14, 0xAAAAAA);
 
             // Category
-            String category = "§7[" + I18n.translate(def.categoryTranslationKey()) + "]";
-            context.drawTextWithShadow(textRenderer, category, startX + 4, y + 26, 0x888888);
+            String category = "\u00A77[" + I18n.get(def.categoryTranslationKey()) + "]";
+            guiGraphics.drawString(font, category, startX + 4, y + 26, 0x888888);
 
             // Equipment info
             String equip = "";
-            if (def.canEquipWeapon()) equip += "§d[⚔] ";
-            if (def.canEquipArmor()) equip += "§9[🛡] ";
+            if (def.canEquipWeapon()) equip += "\u00A7d[\u2694] ";
+            if (def.canEquipArmor()) equip += "\u00A79[\uD83D\uDEE1] ";
             if (!equip.isEmpty()) {
-                context.drawTextWithShadow(textRenderer, equip,
-                        startX + CARD_WIDTH - textRenderer.getWidth(equip) - 4, y + 2, 0xFFFFFF);
+                guiGraphics.drawString(font, equip,
+                        startX + CARD_WIDTH - font.width(equip) - 4, y + 2, 0xFFFFFF);
             }
         }
 
@@ -101,30 +101,30 @@ public class CardScreen extends Screen {
         if (cards.size() > CARDS_PER_PAGE) {
             int scrollBarHeight = (int)((float)CARDS_PER_PAGE / cards.size() * (CARDS_PER_PAGE * (CARD_HEIGHT + 4)));
             int scrollBarY = startY + (int)((float)scrollOffset / cards.size() * (CARDS_PER_PAGE * (CARD_HEIGHT + 4)));
-            context.fill(startX + CARD_WIDTH + 4, scrollBarY, startX + CARD_WIDTH + 8, scrollBarY + scrollBarHeight, 0xFFAAAAAA);
+            guiGraphics.fill(startX + CARD_WIDTH + 4, scrollBarY, startX + CARD_WIDTH + 8, scrollBarY + scrollBarHeight, 0xFFAAAAAA);
         }
 
         // Instructions
-        context.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.screen.cards.hint"),
+        guiGraphics.drawCenteredString(font,
+                I18n.get("arenaclash.screen.cards.hint"),
                 width / 2, height - 20, 0x888888);
 
-        super.render(context, mouseX, mouseY, delta);
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (verticalAmount > 0 && scrollOffset > 0) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY > 0 && scrollOffset > 0) {
             scrollOffset--;
-        } else if (verticalAmount < 0 && scrollOffset < inventory.getCardCount() - CARDS_PER_PAGE) {
+        } else if (scrollY < 0 && scrollOffset < inventory.getCardCount() - CARDS_PER_PAGE) {
             scrollOffset++;
         }
         return true;
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // No-op: prevent 1.21.1 from applying blur shader behind the screen
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // No-op: prevent blur shader behind the screen
     }
 
     @Override

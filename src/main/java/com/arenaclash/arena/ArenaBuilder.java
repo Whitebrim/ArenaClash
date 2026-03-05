@@ -2,10 +2,10 @@ package com.arenaclash.arena;
 
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
 
 /**
  * Builds the physical arena structure in the world using blocks.
@@ -14,31 +14,31 @@ import net.minecraft.util.math.BlockPos;
 public class ArenaBuilder {
 
     // Block palettes
-    private static final BlockState FLOOR = Blocks.SMOOTH_STONE.getDefaultState();
-    private static final BlockState LANE_FLOOR = Blocks.POLISHED_DEEPSLATE.getDefaultState();
-    private static final BlockState WALL = Blocks.STONE_BRICKS.getDefaultState();
-    private static final BlockState WALL_TOP = Blocks.STONE_BRICK_WALL.getDefaultState();
-    private static final BlockState DIVIDER = Blocks.RED_NETHER_BRICKS.getDefaultState();
-    private static final BlockState THRONE_BLOCK = Blocks.GOLD_BLOCK.getDefaultState();
-    private static final BlockState THRONE_ACCENT = Blocks.CRYING_OBSIDIAN.getDefaultState();
-    private static final BlockState TOWER_BLOCK = Blocks.COBBLESTONE.getDefaultState();
-    private static final BlockState TOWER_TOP = Blocks.COBBLESTONE_WALL.getDefaultState();
-    private static final BlockState DEPLOY_ZONE = Blocks.LIME_CONCRETE.getDefaultState();
-    private static final BlockState DEPLOY_ZONE_P2 = Blocks.RED_CONCRETE.getDefaultState();
-    private static final BlockState BARRIER = Blocks.BARRIER.getDefaultState();
-    private static final BlockState AIR = Blocks.AIR.getDefaultState();
-    private static final BlockState GLASS_DIVIDER = Blocks.TINTED_GLASS.getDefaultState();
-    private static final BlockState SIDE_FLOOR_P1 = Blocks.BLUE_CONCRETE.getDefaultState();
-    private static final BlockState SIDE_FLOOR_P2 = Blocks.RED_CONCRETE.getDefaultState();
-    private static final BlockState BUILD_ZONE_FLOOR = Blocks.STRIPPED_BAMBOO_BLOCK.getDefaultState();
-    private static final BlockState BEACON_LIGHT = Blocks.SEA_LANTERN.getDefaultState();
-    private static final BlockState BELL_BLOCK = Blocks.BELL.getDefaultState();
-    private static final BlockState BELL_PEDESTAL = Blocks.POLISHED_BLACKSTONE.getDefaultState();
+    private static final BlockState FLOOR = Blocks.SMOOTH_STONE.defaultBlockState();
+    private static final BlockState LANE_FLOOR = Blocks.POLISHED_DEEPSLATE.defaultBlockState();
+    private static final BlockState WALL = Blocks.STONE_BRICKS.defaultBlockState();
+    private static final BlockState WALL_TOP = Blocks.STONE_BRICK_WALL.defaultBlockState();
+    private static final BlockState DIVIDER = Blocks.RED_NETHER_BRICKS.defaultBlockState();
+    private static final BlockState THRONE_BLOCK = Blocks.GOLD_BLOCK.defaultBlockState();
+    private static final BlockState THRONE_ACCENT = Blocks.CRYING_OBSIDIAN.defaultBlockState();
+    private static final BlockState TOWER_BLOCK = Blocks.COBBLESTONE.defaultBlockState();
+    private static final BlockState TOWER_TOP = Blocks.COBBLESTONE_WALL.defaultBlockState();
+    private static final BlockState DEPLOY_ZONE = Blocks.LIME_CONCRETE.defaultBlockState();
+    private static final BlockState DEPLOY_ZONE_P2 = Blocks.RED_CONCRETE.defaultBlockState();
+    private static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
+    private static final BlockState AIR = Blocks.AIR.defaultBlockState();
+    private static final BlockState GLASS_DIVIDER = Blocks.TINTED_GLASS.defaultBlockState();
+    private static final BlockState SIDE_FLOOR_P1 = Blocks.BLUE_CONCRETE.defaultBlockState();
+    private static final BlockState SIDE_FLOOR_P2 = Blocks.RED_CONCRETE.defaultBlockState();
+    private static final BlockState BUILD_ZONE_FLOOR = Blocks.STRIPPED_BAMBOO_BLOCK.defaultBlockState();
+    private static final BlockState BEACON_LIGHT = Blocks.SEA_LANTERN.defaultBlockState();
+    private static final BlockState BELL_BLOCK = Blocks.BELL.defaultBlockState();
+    private static final BlockState BELL_PEDESTAL = Blocks.POLISHED_BLACKSTONE.defaultBlockState();
 
     /**
      * Build the entire arena.
      */
-    public static void buildArena(ServerWorld world) {
+    public static void buildArena(ServerLevel world) {
         GameConfig cfg = GameConfig.get();
         int cx = cfg.arenaCenterX;
         int cz = cfg.arenaCenterZ;
@@ -131,12 +131,12 @@ public class ArenaBuilder {
 
         // Lighting (embedded in walls)
         for (int z = minZ; z <= maxZ; z += 6) {
-            world.setBlockState(new BlockPos(minX - 1, y + 2, z), BEACON_LIGHT);
-            world.setBlockState(new BlockPos(maxX + 1, y + 2, z), BEACON_LIGHT);
+            world.setBlockAndUpdate(new BlockPos(minX - 1, y + 2, z), BEACON_LIGHT);
+            world.setBlockAndUpdate(new BlockPos(maxX + 1, y + 2, z), BEACON_LIGHT);
         }
         for (int x = minX; x <= maxX; x += 6) {
-            world.setBlockState(new BlockPos(x, y + 2, minZ - 1), BEACON_LIGHT);
-            world.setBlockState(new BlockPos(x, y + 2, maxZ + 1), BEACON_LIGHT);
+            world.setBlockAndUpdate(new BlockPos(x, y + 2, minZ - 1), BEACON_LIGHT);
+            world.setBlockAndUpdate(new BlockPos(x, y + 2, maxZ + 1), BEACON_LIGHT);
         }
 
         // Invisible ceiling barrier
@@ -146,23 +146,23 @@ public class ArenaBuilder {
     /**
      * Build a bell on a small pedestal.
      */
-    private static void buildBellPedestal(ServerWorld world, int x, int y, int z) {
-        world.setBlockState(new BlockPos(x, y, z), BELL_PEDESTAL);
-        world.setBlockState(new BlockPos(x, y + 1, z), BELL_BLOCK);
+    private static void buildBellPedestal(ServerLevel world, int x, int y, int z) {
+        world.setBlockAndUpdate(new BlockPos(x, y, z), BELL_PEDESTAL);
+        world.setBlockAndUpdate(new BlockPos(x, y + 1, z), BELL_BLOCK);
     }
 
     /**
      * Build a throne structure.
      */
-    private static void buildThrone(ServerWorld world, int cx, int y, int cz, TeamSide team) {
+    private static void buildThrone(ServerLevel world, int cx, int y, int cz, TeamSide team) {
         fillBlock(world, THRONE_ACCENT, cx - 2, y, cz - 2, cx + 2, y, cz + 2);
         fillBlock(world, THRONE_BLOCK, cx - 1, y + 1, cz - 1, cx + 1, y + 3, cz + 1);
         for (int dx : new int[]{-1, 1}) {
             for (int dz : new int[]{-1, 1}) {
-                world.setBlockState(new BlockPos(cx + dx, y + 4, cz + dz), THRONE_ACCENT);
+                world.setBlockAndUpdate(new BlockPos(cx + dx, y + 4, cz + dz), THRONE_ACCENT);
             }
         }
-        world.setBlockState(new BlockPos(cx, y + 4, cz), BEACON_LIGHT);
+        world.setBlockAndUpdate(new BlockPos(cx, y + 4, cz), BEACON_LIGHT);
         for (int dx : new int[]{-2, 2}) {
             for (int dz : new int[]{-2, 2}) {
                 fillBlock(world, THRONE_ACCENT, cx + dx, y + 1, cz + dz, cx + dx, y + 3, cz + dz);
@@ -173,25 +173,25 @@ public class ArenaBuilder {
     /**
      * Build a defensive tower.
      */
-    private static void buildTower(ServerWorld world, int cx, int y, int cz, TeamSide team) {
+    private static void buildTower(ServerLevel world, int cx, int y, int cz, TeamSide team) {
         fillBlock(world, TOWER_BLOCK, cx - 1, y, cz - 1, cx + 1, y, cz + 1);
         for (int height = 1; height <= 3; height++) {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     if (dx == 0 && dz == 0) continue;
-                    world.setBlockState(new BlockPos(cx + dx, y + height, cz + dz), TOWER_BLOCK);
+                    world.setBlockAndUpdate(new BlockPos(cx + dx, y + height, cz + dz), TOWER_BLOCK);
                 }
             }
         }
         for (int dx = -1; dx <= 1; dx += 2) {
             for (int dz = -1; dz <= 1; dz += 2) {
-                world.setBlockState(new BlockPos(cx + dx, y + 4, cz + dz), TOWER_TOP);
+                world.setBlockAndUpdate(new BlockPos(cx + dx, y + 4, cz + dz), TOWER_TOP);
             }
         }
-        world.setBlockState(new BlockPos(cx, y + 3, cz), BEACON_LIGHT);
+        world.setBlockAndUpdate(new BlockPos(cx, y + 3, cz), BEACON_LIGHT);
     }
 
-    public static void clearArena(ServerWorld world) {
+    public static void clearArena(ServerLevel world) {
         GameConfig cfg = GameConfig.get();
         int cx = cfg.arenaCenterX;
         int cz = cfg.arenaCenterZ;
@@ -205,7 +205,7 @@ public class ArenaBuilder {
                 cx + arenaHalfWidth + 2, y + 16, cz + halfLen + 16);
     }
 
-    private static void fillBlock(ServerWorld world, BlockState state,
+    private static void fillBlock(ServerLevel world, BlockState state,
                                    int x1, int y1, int z1, int x2, int y2, int z2) {
         int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
         int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
@@ -213,10 +213,10 @@ public class ArenaBuilder {
         for (int x = minX; x <= maxX; x++)
             for (int y = minY; y <= maxY; y++)
                 for (int z = minZ; z <= maxZ; z++)
-                    world.setBlockState(new BlockPos(x, y, z), state);
+                    world.setBlockAndUpdate(new BlockPos(x, y, z), state);
     }
 
-    private static void clearArea(ServerWorld world, int x1, int y1, int z1, int x2, int y2, int z2) {
+    private static void clearArea(ServerLevel world, int x1, int y1, int z1, int x2, int y2, int z2) {
         fillBlock(world, AIR, x1, y1, z1, x2, y2, z2);
     }
 }

@@ -2,7 +2,7 @@ package com.arenaclash.arena;
 
 import com.arenaclash.card.MobCard;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.*;
 

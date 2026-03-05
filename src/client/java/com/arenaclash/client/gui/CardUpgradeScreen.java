@@ -5,11 +5,11 @@ import com.arenaclash.card.MobCard;
 import com.arenaclash.card.MobCardDefinition;
 import com.arenaclash.client.ArenaClashClient;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 
 import java.util.*;
 
@@ -68,8 +68,8 @@ public class CardUpgradeScreen extends Screen {
         }
     }
 
-    public CardUpgradeScreen(NbtCompound inventoryData) {
-        super(Text.translatable("arenaclash.upgrade.title"));
+    public CardUpgradeScreen(CompoundTag inventoryData) {
+        super(Component.translatable("arenaclash.upgrade.title"));
         this.inventory = CardInventory.fromNbt(inventoryData);
         rebuildCardGroups();
 
@@ -159,7 +159,7 @@ public class CardUpgradeScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         long now = System.currentTimeMillis();
         if (lastFrameTime != 0) {
             animTimer += (now - lastFrameTime) / 1000.0f;
@@ -180,7 +180,7 @@ public class CardUpgradeScreen extends Screen {
     // PANEL
     // ================================================================
 
-    private void drawPanel(DrawContext context) {
+    private void drawPanel(GuiGraphics context) {
         context.fill(panelX - 2, panelY - 2, panelX + panelWidth + 2,
                 panelY + panelHeight + 2, 0x20000000);
         context.fill(panelX - 1, panelY - 1, panelX + panelWidth + 1,
@@ -206,7 +206,7 @@ public class CardUpgradeScreen extends Screen {
     // TITLE
     // ================================================================
 
-    private void drawTitle(DrawContext context) {
+    private void drawTitle(GuiGraphics context) {
         int cx = width / 2;
         int titleY = panelY + 10;
 
@@ -214,30 +214,30 @@ public class CardUpgradeScreen extends Screen {
         int glowAlpha = (int) (glowPulse * 255);
         int titleColor = (glowAlpha << 24) | 0xFFAA00;
 
-        context.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.upgrade.header"), cx, titleY, titleColor);
+        context.drawCenteredString(font,
+                I18n.get("arenaclash.upgrade.header"), cx, titleY, titleColor);
 
         int lineY = titleY + 12;
         int hw = 80;
         drawHGrad(context, cx - hw, lineY, cx, lineY + 1, 0x00FFAA00, 0x80FFAA00);
         drawHGrad(context, cx, lineY, cx + hw, lineY + 1, 0x80FFAA00, 0x00FFAA00);
 
-        context.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.upgrade.subtitle"), cx, titleY + 16, 0x999999);
+        context.drawCenteredString(font,
+                I18n.get("arenaclash.upgrade.subtitle"), cx, titleY + 16, 0x999999);
     }
 
     // ================================================================
     // CARD LIST — with scissor clipping
     // ================================================================
 
-    private void drawCardList(DrawContext context, int mouseX, int mouseY) {
+    private void drawCardList(GuiGraphics context, int mouseX, int mouseY) {
         // List background
         context.fill(listX, listY, listX + listW, listY + listH, 0x40000000);
-        context.drawBorder(listX, listY, listW, listH, 0x30FFFFFF);
+        context.renderOutline(listX, listY, listW, listH, 0x30FFFFFF);
 
         if (cardGroups.isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                    I18n.translate("arenaclash.upgrade.no_cards"),
+            context.drawCenteredString(font,
+                    I18n.get("arenaclash.upgrade.no_cards"),
                     width / 2, listY + listH / 2 - 4, 0x666666);
             return;
         }
@@ -274,7 +274,7 @@ public class CardUpgradeScreen extends Screen {
         }
     }
 
-    private void drawCardGroupRow(DrawContext context, CardGroup group, int x, int y,
+    private void drawCardGroupRow(GuiGraphics context, CardGroup group, int x, int y,
                                    int w, int h, int mouseX, int mouseY) {
         MobCardDefinition def = group.definition();
         if (def == null) return;
@@ -300,50 +300,50 @@ public class CardUpgradeScreen extends Screen {
         context.fill(x, y, x + 3, y + h, canMerge ? catColor : (catColor & 0x00FFFFFF) | 0x40000000);
 
         // Mob name + level
-        String lvStr = I18n.translate("arenaclash.upgrade.lv", String.valueOf(group.level()));
-        String mobName = I18n.translate(def.translationKey());
+        String lvStr = I18n.get("arenaclash.upgrade.lv", String.valueOf(group.level()));
+        String mobName = I18n.get(def.translationKey());
         String nameStr = "§f" + mobName + " §6" + lvStr;
-        context.drawTextWithShadow(textRenderer, nameStr, x + 8, y + 4, 0xFFFFFF);
+        context.drawString(font, nameStr, x + 8, y + 4, 0xFFFFFF);
 
         // Count badge
         String countStr = "×" + group.cards().size();
         int countColor = canMerge ? 0xFF55FF55 : 0xFFAAAAAA;
-        int countX = x + w - textRenderer.getWidth(countStr) - 6;
-        context.drawTextWithShadow(textRenderer, countStr, countX, y + 4, countColor);
+        int countX = x + w - font.width(countStr) - 6;
+        context.drawString(font, countStr, countX, y + 4, countColor);
 
         // Stats line
         MobCard sample = group.cards().get(0);
         String stats = String.format("§c♥%.0f §a⚔%.0f §b⚡%.1f",
                 sample.getHP(), sample.getAttack(), sample.getSpeed());
-        context.drawTextWithShadow(textRenderer, stats, x + 8, y + 16, 0xAAAAAA);
+        context.drawString(font, stats, x + 8, y + 16, 0xAAAAAA);
 
         // Category tag
-        String category = "§8[" + I18n.translate(def.categoryTranslationKey()) + "]";
-        context.drawTextWithShadow(textRenderer, category, x + 8, y + 28, 0x666666);
+        String category = "§8[" + I18n.get(def.categoryTranslationKey()) + "]";
+        context.drawString(font, category, x + 8, y + 28, 0x666666);
 
         // Merge indicator
         if (canMerge) {
             int nextLevel = group.level() + 1;
-            String resultStr = "§7→ §e" + I18n.translate("arenaclash.upgrade.lv", String.valueOf(nextLevel));
-            context.drawTextWithShadow(textRenderer, resultStr,
-                    countX - textRenderer.getWidth(resultStr) - 8, y + 16, 0xAAAAAA);
+            String resultStr = "§7→ §e" + I18n.get("arenaclash.upgrade.lv", String.valueOf(nextLevel));
+            context.drawString(font, resultStr,
+                    countX - font.width(resultStr) - 8, y + 16, 0xAAAAAA);
 
             if (isSelected) {
                 float pulse = (float) (Math.sin(animTimer * 3) * 0.3 + 0.7);
                 int mergeAlpha = (int) (pulse * 255);
-                String mergeHint = I18n.translate("arenaclash.upgrade.click_merge");
-                int hintW = textRenderer.getWidth(mergeHint);
-                context.drawTextWithShadow(textRenderer, mergeHint,
+                String mergeHint = I18n.get("arenaclash.upgrade.click_merge");
+                int hintW = font.width(mergeHint);
+                context.drawString(font, mergeHint,
                         x + w - hintW - 6, y + 28, (mergeAlpha << 24) | 0xFFAA00);
             }
         } else {
-            String needStr = I18n.translate("arenaclash.upgrade.need_two");
-            context.drawTextWithShadow(textRenderer, needStr,
-                    countX - textRenderer.getWidth(needStr) - 8, y + 28, 0x555555);
+            String needStr = I18n.get("arenaclash.upgrade.need_two");
+            context.drawString(font, needStr,
+                    countX - font.width(needStr) - 8, y + 28, 0x555555);
         }
 
         if (isSelected) {
-            context.drawBorder(x, y, w, h, 0xC0FFAA00);
+            context.renderOutline(x, y, w, h, 0xC0FFAA00);
         }
     }
 
@@ -351,7 +351,7 @@ public class CardUpgradeScreen extends Screen {
     // MERGE AREA
     // ================================================================
 
-    private void drawMergeArea(DrawContext context, int mouseX, int mouseY) {
+    private void drawMergeArea(GuiGraphics context, int mouseX, int mouseY) {
         int areaY = mergeButtonY - 24;
         int cx = width / 2;
 
@@ -360,18 +360,18 @@ public class CardUpgradeScreen extends Screen {
             MobCardDefinition def = sel.definition();
             if (def == null) return;
 
-            String mobName = I18n.translate(def.translationKey());
+            String mobName = I18n.get(def.translationKey());
             int curLv = sel.level();
             int newLv = curLv + 1;
 
             String preview = String.format("§f%s §6Lv.%d §7+ §f%s §6Lv.%d §7→ §e%s §6§lLv.%d",
                     mobName, curLv, mobName, curLv, mobName, newLv);
-            context.drawCenteredTextWithShadow(textRenderer, preview, cx, areaY, 0xFFFFFF);
+            context.drawCenteredString(font, preview, cx, areaY, 0xFFFFFF);
 
             double newHP = def.getHP(newLv);
             double newAtk = def.getAttack(newLv);
             String newStats = String.format("§c♥%.0f §a⚔%.0f", newHP, newAtk);
-            context.drawCenteredTextWithShadow(textRenderer, newStats, cx, areaY + 11, 0xCCCCCC);
+            context.drawCenteredString(font, newStats, cx, areaY + 11, 0xCCCCCC);
 
             // Merge button with cooldown animation
             boolean btnHovered = mouseX >= mergeButtonX && mouseX <= mergeButtonX + mergeButtonW
@@ -399,15 +399,15 @@ public class CardUpgradeScreen extends Screen {
             }
 
             int btnBorder = canClick ? (btnHovered ? 0xFFFFAA00 : 0x80FFAA00) : 0x40666666;
-            context.drawBorder(mergeButtonX, mergeButtonY, mergeButtonW, mergeButtonH, btnBorder);
+            context.renderOutline(mergeButtonX, mergeButtonY, mergeButtonW, mergeButtonH, btnBorder);
 
-            String btnText = I18n.translate("arenaclash.upgrade.merge_button");
+            String btnText = I18n.get("arenaclash.upgrade.merge_button");
             int btnTextColor = canClick ? 0xFFFFFF : 0x888888;
-            context.drawCenteredTextWithShadow(textRenderer, btnText,
+            context.drawCenteredString(font, btnText,
                     mergeButtonX + mergeButtonW / 2, mergeButtonY + 7, btnTextColor);
         } else {
-            String hint = I18n.translate("arenaclash.upgrade.select_hint");
-            context.drawCenteredTextWithShadow(textRenderer, hint, cx, areaY + 8, 0x666666);
+            String hint = I18n.get("arenaclash.upgrade.select_hint");
+            context.drawCenteredString(font, hint, cx, areaY + 8, 0x666666);
         }
     }
 
@@ -415,7 +415,7 @@ public class CardUpgradeScreen extends Screen {
     // DECORATIONS
     // ================================================================
 
-    private void drawDecorations(DrawContext context) {
+    private void drawDecorations(GuiGraphics context) {
         int accentColor = 0x35FFAA00;
         int len = 10;
 
@@ -431,9 +431,9 @@ public class CardUpgradeScreen extends Screen {
                 panelX + panelWidth, panelY + panelHeight, accentColor);
     }
 
-    private void drawHintBar(DrawContext context) {
-        context.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.upgrade.hint"),
+    private void drawHintBar(GuiGraphics context) {
+        context.drawCenteredString(font,
+                I18n.get("arenaclash.upgrade.hint"),
                 width / 2, panelY + panelHeight + 4, 0x666666);
     }
 
@@ -480,11 +480,11 @@ public class CardUpgradeScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int maxScroll = Math.max(0, cardGroups.size() - VISIBLE_ROWS);
-        if (verticalAmount > 0 && scrollOffset > 0) {
+        if (scrollY > 0 && scrollOffset > 0) {
             scrollOffset--;
-        } else if (verticalAmount < 0 && scrollOffset < maxScroll) {
+        } else if (scrollY < 0 && scrollOffset < maxScroll) {
             scrollOffset++;
         }
         persistedScrollOffset = scrollOffset;
@@ -494,7 +494,7 @@ public class CardUpgradeScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == 256) { // ESC
-            this.close();
+            this.onClose();
             return true;
         }
         if (keyCode == 32) { // SPACE — quick merge like Satisfactory crafter
@@ -546,7 +546,7 @@ public class CardUpgradeScreen extends Screen {
     // UTILITY
     // ================================================================
 
-    private void drawHGrad(DrawContext ctx, int x1, int y1, int x2, int y2, int cL, int cR) {
+    private void drawHGrad(GuiGraphics ctx, int x1, int y1, int x2, int y2, int cL, int cR) {
         int w = x2 - x1;
         if (w <= 0) return;
         for (int i = 0; i < w; i++) {

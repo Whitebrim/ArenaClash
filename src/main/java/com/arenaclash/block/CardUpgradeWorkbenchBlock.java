@@ -2,14 +2,14 @@ package com.arenaclash.block;
 
 import com.arenaclash.network.NetworkHandler;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 /**
  * Card Upgrade Workbench — allows players to merge two identical cards
@@ -20,23 +20,23 @@ import net.minecraft.world.World;
  */
 public class CardUpgradeWorkbenchBlock extends Block {
 
-    public CardUpgradeWorkbenchBlock(Settings settings) {
+    public CardUpgradeWorkbenchBlock(Properties settings) {
         super(settings);
     }
 
     @Override
-    public ActionResult onUse(BlockState state, World world, BlockPos pos,
-                              PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient()) {
+    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos,
+                              Player player, BlockHitResult hit) {
+        if (level.isClientSide()) {
             // Client side: just consume the click, GUI will open when server sends packet
-            return ActionResult.SUCCESS;
+            return InteractionResult.SUCCESS;
         }
 
         // Server side: send packet to open the upgrade GUI
         // (This only fires if UseBlockCallback didn't return FAIL for enemy zone etc.)
-        if (player instanceof ServerPlayerEntity serverPlayer) {
+        if (player instanceof ServerPlayer serverPlayer) {
             ServerPlayNetworking.send(serverPlayer, new NetworkHandler.OpenUpgradeGui());
         }
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 }

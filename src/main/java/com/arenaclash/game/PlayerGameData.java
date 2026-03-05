@@ -1,9 +1,9 @@
 package com.arenaclash.game;
 
 import com.arenaclash.card.CardInventory;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.BlockPos;
 
 import java.util.UUID;
 
@@ -40,14 +40,14 @@ public class PlayerGameData {
     public void setReadyForBattle(boolean ready) { this.readyForBattle = ready; }
     public void addExperience(int xp) { this.experiencePoints += xp; }
 
-    public void saveSurvivalPosition(ServerPlayerEntity player) {
-        this.survivalReturnPos = player.getBlockPos();
-        this.survivalReturnWorld = player.getServerWorld().getRegistryKey().getValue().toString();
+    public void saveSurvivalPosition(ServerPlayer player) {
+        this.survivalReturnPos = player.blockPosition();
+        this.survivalReturnWorld = player.serverLevel().dimension().location().toString();
     }
 
-    public NbtCompound toNbt() {
-        NbtCompound nbt = new NbtCompound();
-        nbt.putUuid("playerId", playerId);
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putUUID("playerId", playerId);
         nbt.putString("team", team.name());
         nbt.put("cards", cardInventory.toNbt());
         nbt.putInt("xp", experiencePoints);
@@ -60,8 +60,8 @@ public class PlayerGameData {
         return nbt;
     }
 
-    public static PlayerGameData fromNbt(NbtCompound nbt) {
-        UUID id = nbt.getUuid("playerId");
+    public static PlayerGameData fromNbt(CompoundTag nbt) {
+        UUID id = nbt.getUUID("playerId");
         TeamSide team = TeamSide.valueOf(nbt.getString("team"));
         PlayerGameData data = new PlayerGameData(id, team);
         data.cardInventory = CardInventory.fromNbt(nbt.getCompound("cards"));

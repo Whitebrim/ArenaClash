@@ -1,15 +1,13 @@
 package com.arenaclash.arena;
 
 import com.arenaclash.game.TeamSide;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.particle.DustParticleEffect;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 
@@ -118,7 +116,7 @@ public class ProjectileTracker {
     /**
      * Tick all tracked projectiles. Check if they've reached their targets.
      */
-    public void tick(ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+    public void tick(ServerLevel world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         Iterator<TrackedProjectile> it = trackedProjectiles.iterator();
         while (it.hasNext()) {
             TrackedProjectile tp = it.next();
@@ -159,8 +157,8 @@ public class ProjectileTracker {
                 // Check distance to entity bounding box center (not feet).
                 // Arrows aim at entity center, so measuring to feet position causes
                 // misses on tall mobs like ghasts where the vertical offset > hitRadius.
-                Vec3d entityCenter = targetEntity.getPos().add(0, targetEntity.getHeight() * 0.5, 0);
-                double dist = proj.getPos().squaredDistanceTo(entityCenter);
+                Vec3 entityCenter = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.5, 0);
+                double dist = proj.position().distanceToSqr(entityCenter);
                 if (dist <= tp.hitRadius * tp.hitRadius) {
                     // HIT! Apply damage and effects
                     applyMobHit(tp, proj, targetEntity, world, allMobs, structures);
@@ -175,8 +173,8 @@ public class ProjectileTracker {
                     continue;
                 }
 
-                Vec3d sPos = Vec3d.ofCenter(tp.targetStructure.getPosition()).add(0, 2, 0);
-                double dist = proj.getPos().squaredDistanceTo(sPos);
+                Vec3 sPos = Vec3.atCenterOf(tp.targetStructure.getPosition()).add(0, 2, 0);
+                double dist = proj.position().distanceToSqr(sPos);
                 if (dist <= (tp.hitRadius + 2.0) * (tp.hitRadius + 2.0)) {
                     // HIT structure
                     applyStructureHit(tp, proj, world, allMobs, structures);
@@ -191,37 +189,37 @@ public class ProjectileTracker {
      * Apply damage when a projectile hits a mob target.
      */
     private void applyMobHit(TrackedProjectile tp, Entity proj, Entity targetEntity,
-                             ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+                             ServerLevel world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         float dmg = (float) tp.damage;
 
         if (tp.hitEffect == HitEffect.GHAST_AOE) {
             // Ghast fireball: AOE explosion like creeper
-            applyGhastAOE(tp, proj.getPos(), world, allMobs, structures);
+            applyGhastAOE(tp, proj.position(), world, allMobs, structures);
         } else {
             // Single-target damage
             tp.targetMob.takeDamage(dmg, world);
             ArenaMob.spawnDamageNumber(world,
-                    targetEntity.getPos().add(0, targetEntity.getHeight() + 0.3, 0), dmg);
+                    targetEntity.position().add(0, targetEntity.getBbHeight() + 0.3, 0), dmg);
 
             if (targetEntity instanceof LivingEntity living) {
                 living.hurtTime = 10;
-                living.maxHurtTime = 10;
+                living.hurtDuration = 10;
             }
 
             // Visual particles on hit
             int pCount = Math.min((int)(dmg / 2) + 1, 5);
-            world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR,
-                    targetEntity.getX(), targetEntity.getBodyY(0.5), targetEntity.getZ(),
+            world.sendParticles(ParticleTypes.DAMAGE_INDICATOR,
+                    targetEntity.getX(), targetEntity.getY(0.5), targetEntity.getZ(),
                     pCount, 0.3, 0.2, 0.3, 0.1);
         }
 
         // Apply hit effects
         switch (tp.hitEffect) {
-            case BLAZE_FIRE -> targetEntity.setOnFireFor(3);
+            case BLAZE_FIRE -> targetEntity.igniteForSeconds(3);
             case WITHER_EFFECT -> {
                 if (targetEntity instanceof LivingEntity lt) {
-                    lt.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
-                            net.minecraft.entity.effect.StatusEffects.WITHER, 100, 1));
+                    lt.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                            net.minecraft.world.effect.MobEffects.WITHER, 100, 1));
                 }
             }
             default -> {}
@@ -232,8 +230,8 @@ public class ProjectileTracker {
      * Apply ghast fireball AOE explosion — damages all enemies in radius like creeper,
      * plus damages enemy structures in range.
      */
-    private void applyGhastAOE(TrackedProjectile tp, Vec3d center,
-                               ServerWorld world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
+    private void applyGhastAOE(TrackedProjectile tp, Vec3 center,
+                               ServerLevel world, List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         double explosionRadius = tp.aoeRadius > 0 ? tp.aoeRadius : 4.5;
         double epicenterRadius = 0.5; // Full damage within this radius
         float explosionDamage = (float) tp.damage;
@@ -257,19 +255,19 @@ public class ProjectileTracker {
                 if (dmg < 0.5f) continue;
                 mob.takeDamage(dmg, world);
                 ArenaMob.spawnDamageNumber(world,
-                        e.getPos().add(0, e.getHeight() + 0.3, 0), dmg);
+                        e.position().add(0, e.getBbHeight() + 0.3, 0), dmg);
 
                 // Knockback away from explosion center
                 if (dist > 0.01) {
-                    Vec3d kb = e.getPos().subtract(center).normalize().multiply(1.2);
+                    Vec3 kb = e.position().subtract(center).normalize().scale(1.2);
                     double nx = e.getX() + kb.x;
                     double nz = e.getZ() + kb.z;
-                    e.requestTeleport(nx, e.getY(), nz);
+                    e.teleportTo(nx, e.getY(), nz);
                 }
 
                 if (e instanceof LivingEntity living) {
                     living.hurtTime = 10;
-                    living.maxHurtTime = 10;
+                    living.hurtDuration = 10;
                 }
             }
         }
@@ -277,7 +275,7 @@ public class ProjectileTracker {
         // Damage enemy structures in range
         for (ArenaStructure struct : structures) {
             if (struct.getOwner() == tp.attackerTeam || struct.isDestroyed()) continue;
-            Vec3d sPos = Vec3d.ofCenter(struct.getPosition());
+            Vec3 sPos = Vec3.atCenterOf(struct.getPosition());
             double dx = center.x - sPos.x, dz = center.z - sPos.z;
             double dist = Math.sqrt(dx * dx + dz * dz);
             if (dist <= explosionRadius + 2.0) {
@@ -287,28 +285,28 @@ public class ProjectileTracker {
         }
 
         // Explosion visual and sound effects
-        world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 0.5, center.z, 1, 0, 0, 0, 0);
-        world.spawnParticles(ParticleTypes.CLOUD, center.x, center.y + 0.5, center.z, 15, 1.2, 0.8, 1.2, 0.1);
-        world.spawnParticles(ParticleTypes.FLAME, center.x, center.y + 0.5, center.z, 10, 1.0, 0.6, 1.0, 0.05);
+        world.sendParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 0.5, center.z, 1, 0, 0, 0, 0);
+        world.sendParticles(ParticleTypes.CLOUD, center.x, center.y + 0.5, center.z, 15, 1.2, 0.8, 1.2, 0.1);
+        world.sendParticles(ParticleTypes.FLAME, center.x, center.y + 0.5, center.z, 10, 1.0, 0.6, 1.0, 0.05);
         world.playSound(null, center.x, center.y, center.z,
-                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.HOSTILE, 1.5f, 1.0f);
+                SoundEvents.GENERIC_EXPLODE, SoundSource.HOSTILE, 1.5f, 1.0f);
     }
 
     /**
      * Apply damage when a projectile hits a structure.
      */
-    private void applyStructureHit(TrackedProjectile tp, Entity proj, ServerWorld world,
+    private void applyStructureHit(TrackedProjectile tp, Entity proj, ServerLevel world,
                                    List<ArenaMob> allMobs, List<ArenaStructure> structures) {
         if (tp.hitEffect == HitEffect.GHAST_AOE) {
             // Ghast fireball hitting a structure also does AOE to nearby mobs
-            applyGhastAOE(tp, proj.getPos(), world, allMobs, structures);
+            applyGhastAOE(tp, proj.position(), world, allMobs, structures);
         } else {
             float dmg = (float) tp.damage;
             tp.targetStructure.damage(dmg, world);
 
-            Vec3d sp = Vec3d.ofCenter(tp.targetStructure.getPosition()).add(0, 1, 0);
-            world.spawnParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
-            world.spawnParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
+            Vec3 sp = Vec3.atCenterOf(tp.targetStructure.getPosition()).add(0, 1, 0);
+            world.sendParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
+            world.sendParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
             ArenaMob.spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
         }
     }
@@ -316,7 +314,7 @@ public class ProjectileTracker {
     /**
      * Clear all tracked projectiles and discard their entities.
      */
-    public void cleanup(ServerWorld world) {
+    public void cleanup(ServerLevel world) {
         for (TrackedProjectile tp : trackedProjectiles) {
             if (world != null) {
                 Entity proj = world.getEntity(tp.projectileEntityId);

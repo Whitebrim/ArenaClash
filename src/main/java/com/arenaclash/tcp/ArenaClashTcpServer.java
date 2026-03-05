@@ -6,7 +6,7 @@ import com.arenaclash.card.MobCardRegistry;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.game.TeamSide;
 import com.google.gson.JsonObject;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -171,7 +171,7 @@ public class ArenaClashTcpServer {
                     net.minecraft.server.MinecraftServer server = GameManager.getInstance().getServer();
                     if (server != null) {
                         server.execute(() -> {
-                            Text result = GameManager.getInstance().startGame();
+                            Component result = GameManager.getInstance().startGame();
                             ArenaClash.LOGGER.info("[ArenaClash TCP] Auto-start result: {}", result.getString());
                         });
                     }
@@ -272,31 +272,31 @@ public class ArenaClashTcpServer {
                         server.execute(() -> {
                             try {
                                 // Create a command source that relays feedback to the TCP session
-                                net.minecraft.server.command.CommandOutput tcpOutput = new net.minecraft.server.command.CommandOutput() {
+                                net.minecraft.commands.CommandSource tcpOutput = new net.minecraft.commands.CommandSource() {
                                     @Override
-                                    public void sendMessage(net.minecraft.text.Text message) {
+                                    public void sendSystemMessage(net.minecraft.network.chat.Component message) {
                                         session.send(SyncProtocol.serverMessage(message.getString()));
                                     }
                                     @Override
-                                    public boolean shouldReceiveFeedback() { return true; }
+                                    public boolean acceptsSuccess() { return true; }
                                     @Override
-                                    public boolean shouldTrackOutput() { return true; }
+                                    public boolean acceptsFailure() { return true; }
                                     @Override
-                                    public boolean shouldBroadcastConsoleToOps() { return false; }
+                                    public boolean shouldInformAdmins() { return false; }
                                 };
-                                net.minecraft.server.command.ServerCommandSource source =
-                                        new net.minecraft.server.command.ServerCommandSource(
+                                net.minecraft.commands.CommandSourceStack source =
+                                        new net.minecraft.commands.CommandSourceStack(
                                                 tcpOutput,
-                                                server.getCommandSource().getPosition(),
-                                                server.getCommandSource().getRotation(),
-                                                server.getOverworld(),
+                                                server.createCommandSourceStack().getPosition(),
+                                                server.createCommandSourceStack().getRotation(),
+                                                server.overworld(),
                                                 4, // permission level
                                                 session.getPlayerName(),
-                                                net.minecraft.text.Text.literal(session.getPlayerName()),
+                                                net.minecraft.network.chat.Component.literal(session.getPlayerName()),
                                                 server,
                                                 null
                                         );
-                                server.getCommandManager().executeWithPrefix(source, "/" + cmd);
+                                server.getCommands().performPrefixedCommand(source, "/" + cmd);
                             } catch (Exception e) {
                                 session.send(SyncProtocol.translatableMessage("arenaclash.tcp.command_error", e.getMessage()));
                             }
