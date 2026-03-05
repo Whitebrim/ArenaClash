@@ -15,12 +15,13 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.monster.Vex;
-import net.minecraft.world.entity.projectile.Arrow;
-import net.minecraft.world.entity.projectile.AbstractArrow;
-import net.minecraft.world.entity.projectile.SmallFireball;
-import net.minecraft.world.entity.projectile.LargeFireball;
-import net.minecraft.world.entity.projectile.WitherSkull;
-import net.minecraft.world.entity.projectile.Snowball;
+import net.minecraft.world.entity.projectile.arrow.Arrow;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.entity.projectile.hurtingprojectile.SmallFireball;
+import net.minecraft.world.entity.projectile.hurtingprojectile.LargeFireball;
+import net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.Snowball;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.particles.DustParticleOptions;
@@ -240,11 +241,11 @@ public class ArenaMob {
         MobCardDefinition def = sourceCard.getDefinition();
         if (def == null) return;
 
-        Entity entity = def.entityType().create(world);
+        Entity entity = def.entityType().create(world, EntitySpawnReason.MOB_SUMMONED);
         if (entity == null) return;
 
         double spawnY = pos.getY() + (isFlying() ? 1.0 : 0.0);
-        entity.moveTo(pos.getX() + 0.5, spawnY, pos.getZ() + 0.5, 0, 0);
+        entity.setPos(pos.getX() + 0.5, spawnY, pos.getZ() + 0.5);
 
         if (entity instanceof Mob mob) {
             mob.setNoAi(true);
@@ -252,7 +253,7 @@ public class ArenaMob {
             var attr = mob.getAttribute(Attributes.MAX_HEALTH);
             if (attr != null) attr.setBaseValue(maxHP);
             mob.setHealth((float) maxHP);
-            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.world.entity.monster.Zombie z) {
+            if ("baby_zombie".equals(sourceCard.getMobId()) && entity instanceof net.minecraft.world.entity.monster.zombie.Zombie z) {
                 z.setBaby(true);
             }
             if (entity instanceof net.minecraft.world.entity.monster.Slime slime) {
@@ -326,7 +327,7 @@ public class ArenaMob {
 
         // Teleport marker to exact mob position — every tick for smooth tracking
         double hpY = mobEntity.getY() + mobEntity.getBbHeight() + 0.3;
-        marker.setPosition(mobEntity.getX(), hpY, mobEntity.getZ());
+        marker.setPos(mobEntity.getX(), hpY, mobEntity.getZ());
 
         if (!forceText) return;
         if (!(mobEntity instanceof LivingEntity living)) return;
@@ -396,7 +397,7 @@ public class ArenaMob {
         lastPosition = entity.position();
 
         // HP bar: position every tick, text every 5 ticks
-        boolean updateText = (world.getServer().getTicks() % 5 == 0);
+        boolean updateText = (world.getServer().getTickCount() % 5 == 0);
         updateHpBar(world, entity, updateText);
 
         // Clean up dead vexes
@@ -412,7 +413,9 @@ public class ArenaMob {
 
     private void tickEnvironmental(ServerLevel world, Entity entity) {
         if (isUndead() && sunBurnCooldown <= 0) {
-            if (world.isDay() && !world.isRaining()) {
+            long clockTime = world.getOverworldClockTime() % 24000;
+            boolean isDay = clockTime >= 0 && clockTime < 13000;
+            if (isDay && !world.isRaining()) {
                 BlockPos pos = entity.blockPosition();
                 if (world.canSeeSky(pos)) {
                     if (entity instanceof LivingEntity living) {
@@ -724,7 +727,7 @@ public class ArenaMob {
                 world.addFreshEntity(arrow);
                 tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                         ProjectileTracker.HitEffect.NONE, 2.0, 0);
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_SKELETON_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.SKELETON_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "pillager" -> {
                 Arrow arrow = new Arrow(world, shootFrom.x, shootFrom.y, shootFrom.z,
@@ -736,14 +739,14 @@ public class ArenaMob {
                 world.addFreshEntity(arrow);
                 tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                         ProjectileTracker.HitEffect.NONE, 2.0, 0);
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ITEM_CROSSBOW_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.CROSSBOW_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "blaze" -> {
                 try {
                     SmallFireball fb = new SmallFireball(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.8));
-                    fb.setPosition(shootFrom);
+                    fb.setPos(shootFrom);
                     fb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(fb);
                     tracker.trackMobProjectile(fb.getUUID(), team, defender, dmg,
@@ -753,7 +756,7 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.BLAZE_FIRE, 2.0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_BLAZE_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.BLAZE_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "ghast" -> {
                 // Ghast fireball: tracked with AOE explosion on impact
@@ -761,7 +764,7 @@ public class ArenaMob {
                     LargeFireball fb = new LargeFireball(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.5), 0);
-                    fb.setPosition(shootFrom);
+                    fb.setPos(shootFrom);
                     fb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(fb);
                     tracker.trackMobProjectile(fb.getUUID(), team, defender, dmg,
@@ -771,11 +774,11 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.GHAST_AOE, 2.5, 4.5);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_GHAST_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.GHAST_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "witch" -> {
                 try {
-                    Snowball sb = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z);
+                    Snowball sb = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z, new ItemStack(Items.SNOWBALL));
                     sb.shoot(direction.x, direction.y + 0.2, direction.z, 0.75f, 4.0f);
                     sb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(sb);
@@ -786,11 +789,11 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_WITCH_THROW, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.WITCH_THROW, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "snow_golem" -> {
                 try {
-                    Snowball sb = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z);
+                    Snowball sb = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z, new ItemStack(Items.SNOWBALL));
                     sb.shoot(direction.x, direction.y + 0.1, direction.z, 1.2f, 3.0f);
                     sb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(sb);
@@ -801,7 +804,7 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_SNOW_GOLEM_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.SNOW_GOLEM_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "guardian", "elder_guardian" -> {
                 // Guardian laser beam — instant damage (particle effect, no projectile entity)
@@ -815,9 +818,9 @@ public class ArenaMob {
                     float g = "elder_guardian".equals(mobId) ? 0.0f : 0.8f;
                     float b = "elder_guardian".equals(mobId) ? 0.5f : 1.0f;
                     world.sendParticles(new DustParticleOptions(
-                            new org.joml.Vector3f(r, g, b), 1.0f), px, py, pz, 1, 0, 0, 0, 0);
+                            ((int)(r * 255) << 16) | ((int)(g * 255) << 8) | (int)(b * 255), 1.0f), px, py, pz, 1, 0, 0, 0, 0);
                 }
-                var snd = "elder_guardian".equals(mobId) ? SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE : SoundEvents.ENTITY_GUARDIAN_ATTACK;
+                var snd = "elder_guardian".equals(mobId) ? SoundEvents.ELDER_GUARDIAN_CURSE : SoundEvents.GUARDIAN_ATTACK;
                 world.playSound(null, attacker.blockPosition(), snd, SoundSource.HOSTILE, 1.0f, 1.0f);
                 // Instant damage — no projectile entity to track
                 defender.takeDamage(dmg, world);
@@ -826,7 +829,7 @@ public class ArenaMob {
             }
             case "llama", "trader_llama" -> {
                 try {
-                    Snowball spit = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z);
+                    Snowball spit = new Snowball(world, shootFrom.x, shootFrom.y, shootFrom.z, new ItemStack(Items.SNOWBALL));
                     spit.shoot(direction.x, direction.y + 0.1, direction.z, 1.0f, 5.0f);
                     spit.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(spit);
@@ -837,7 +840,7 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.NONE, 2.0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_LLAMA_SPIT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.LLAMA_SPIT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             case "breeze" -> {
                 // Wind charge — instant damage (particle effect, no projectile entity)
@@ -849,7 +852,7 @@ public class ArenaMob {
                     world.sendParticles(ParticleTypes.CLOUD, px, py, pz, 3, 0.1, 0.1, 0.1, 0.05);
                     world.sendParticles(ParticleTypes.POOF, px, py, pz, 1, 0.1, 0.1, 0.1, 0.02);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_BREEZE_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.BREEZE_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
                 defender.takeDamage(dmg, world);
                 spawnDamageNumber(world, targetEntity.position().add(0, targetEntity.getBbHeight() + 0.3, 0), dmg);
                 if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.hurtDuration = 10; }
@@ -864,7 +867,7 @@ public class ArenaMob {
                     double pz = shootFrom.z + (targetPos.z - shootFrom.z) * t;
                     world.sendParticles(ParticleTypes.SONIC_BOOM, px, py, pz, 1, 0, 0, 0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundSource.HOSTILE, 1.5f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.WARDEN_SONIC_BOOM, SoundSource.HOSTILE, 1.5f, 1.0f);
                 defender.takeDamage(dmg, world);
                 spawnDamageNumber(world, targetEntity.position().add(0, targetEntity.getBbHeight() + 0.3, 0), dmg);
                 if (targetEntity instanceof LivingEntity ld) { ld.hurtTime = 10; ld.hurtDuration = 10; }
@@ -874,7 +877,7 @@ public class ArenaMob {
                     WitherSkull skull = new WitherSkull(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.6));
-                    skull.setPosition(shootFrom);
+                    skull.setPos(shootFrom);
                     skull.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(skull);
                     tracker.trackMobProjectile(skull.getUUID(), team, defender, dmg,
@@ -884,7 +887,7 @@ public class ArenaMob {
                     tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                             ProjectileTracker.HitEffect.WITHER_EFFECT, 2.0, 0);
                 }
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_WITHER_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.WITHER_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
             default -> {
                 // Fallback: arrow
@@ -897,7 +900,7 @@ public class ArenaMob {
                 world.addFreshEntity(arrow);
                 tracker.trackMobProjectile(arrow.getUUID(), team, defender, dmg,
                         ProjectileTracker.HitEffect.NONE, 2.0, 0);
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_ARROW_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.ARROW_SHOOT, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
         }
     }
@@ -950,7 +953,7 @@ public class ArenaMob {
         world.sendParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y + 1, center.z, 1, 0, 0, 0, 0);
         world.sendParticles(ParticleTypes.CLOUD, center.x, center.y + 1, center.z, 20, 1.5, 1, 1.5, 0.1);
         world.playSound(null, center.x, center.y, center.z,
-                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundSource.HOSTILE, 2.0f, 1.0f);
+                SoundEvents.GENERIC_EXPLODE.value(), SoundSource.HOSTILE, 2.0f, 1.0f);
         markDead(world);
     }
 
@@ -974,7 +977,7 @@ public class ArenaMob {
         world.sendParticles(ParticleTypes.PORTAL, attacker.getX(), attacker.getY() + 1, attacker.getZ(), 15, 0.3, 0.5, 0.3, 0.3);
         attacker.teleportTo(newX, attacker.getY(), newZ);
         world.sendParticles(ParticleTypes.PORTAL, newX, attacker.getY() + 1, newZ, 15, 0.3, 0.5, 0.3, 0.3);
-        world.playSound(null, newX, attacker.getY(), newZ, SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundSource.HOSTILE, 1.0f, 1.0f);
+        world.playSound(null, newX, attacker.getY(), newZ, SoundEvents.ENDERMAN_TELEPORT, SoundSource.HOSTILE, 1.0f, 1.0f);
 
         performAttack(attacker, defender, world, allMobs);
     }
@@ -996,12 +999,12 @@ public class ArenaMob {
 
         if (liveVexes < 3 && world.getRandom().nextFloat() < 0.35) {
             // Summon a real Vex entity
-            Vex vex = EntityType.VEX.create(world);
+            Vex vex = EntityType.VEX.create(world, EntitySpawnReason.MOB_SUMMONED);
             if (vex != null) {
                 double vx = attacker.getX() + (world.getRandom().nextDouble() - 0.5) * 2;
                 double vy = attacker.getY() + 1.0;
                 double vz = attacker.getZ() + (world.getRandom().nextDouble() - 0.5) * 2;
-                vex.moveTo(vx, vy, vz, 0, 0);
+                vex.setPos(vx, vy, vz);
                 vex.setNoAi(true);
                 vex.setPersistenceRequired();
                 vex.addTag("arenaclash_mob");
@@ -1028,7 +1031,7 @@ public class ArenaMob {
                 pendingChildMobs.add(vexMob);
 
                 world.sendParticles(ParticleTypes.ENCHANTED_HIT, vx, vy + 0.5, vz, 10, 0.3, 0.3, 0.3, 0.2);
-                world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_EVOKER_PREPARE_SUMMON, SoundSource.HOSTILE, 1.0f, 1.0f);
+                world.playSound(null, attacker.blockPosition(), SoundEvents.EVOKER_PREPARE_SUMMON, SoundSource.HOSTILE, 1.0f, 1.0f);
             }
         } else {
             // Fang attack — spawn evoker fangs entity line toward target (AoE)
@@ -1050,7 +1053,7 @@ public class ArenaMob {
                     world.sendParticles(ParticleTypes.CLOUD, px, py + 0.3, pz, 3, 0.1, 0.1, 0.1, 0.02);
                 }
             }
-            world.playSound(null, attacker.blockPosition(), SoundEvents.ENTITY_EVOKER_PREPARE_ATTACK, SoundSource.HOSTILE, 1.0f, 1.0f);
+            world.playSound(null, attacker.blockPosition(), SoundEvents.EVOKER_PREPARE_ATTACK, SoundSource.HOSTILE, 1.0f, 1.0f);
 
             // AoE damage: hit all enemies within the fang line corridor
             float dmg = (float) attackDamage;
@@ -1128,7 +1131,7 @@ public class ArenaMob {
             Vec3 sp = Vec3.atCenterOf(structure.getPosition()).add(0, 1, 0);
             world.sendParticles(ParticleTypes.DAMAGE_INDICATOR, sp.x, sp.y, sp.z, 3, 0.5, 0.3, 0.5, 0.1);
             world.sendParticles(ParticleTypes.SMOKE, sp.x, sp.y, sp.z, 3, 0.5, 0.5, 0.5, 0.02);
-            world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundSource.HOSTILE, 1.0f, 0.7f);
+            world.playSound(null, sp.x, sp.y, sp.z, SoundEvents.PLAYER_ATTACK_STRONG, SoundSource.HOSTILE, 1.0f, 0.7f);
             spawnDamageNumber(world, sp.add(0, 1.5, 0), dmg);
         }
     }
@@ -1159,7 +1162,7 @@ public class ArenaMob {
                     SmallFireball fb = new SmallFireball(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.8));
-                    fb.setPosition(shootFrom);
+                    fb.setPos(shootFrom);
                     fb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(fb);
                     yield fb.getUUID();
@@ -1168,7 +1171,7 @@ public class ArenaMob {
                     LargeFireball fb = new LargeFireball(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.5), 0);
-                    fb.setPosition(shootFrom);
+                    fb.setPos(shootFrom);
                     fb.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(fb);
                     yield fb.getUUID();
@@ -1177,7 +1180,7 @@ public class ArenaMob {
                     WitherSkull skull = new WitherSkull(world,
                             attacker instanceof LivingEntity le ? le : null,
                             direction.scale(0.6));
-                    skull.setPosition(shootFrom);
+                    skull.setPos(shootFrom);
                     skull.addTag("arenaclash_mob_projectile");
                     world.addFreshEntity(skull);
                     yield skull.getUUID();
@@ -1196,19 +1199,19 @@ public class ArenaMob {
     /** Play the ranged attack sound for a mob type */
     private void playRangedSound(String mobId, Entity attacker, ServerLevel world) {
         var sound = switch (mobId) {
-            case "skeleton", "stray", "bogged" -> SoundEvents.ENTITY_SKELETON_SHOOT;
-            case "pillager" -> SoundEvents.ITEM_CROSSBOW_SHOOT;
-            case "blaze" -> SoundEvents.ENTITY_BLAZE_SHOOT;
-            case "ghast" -> SoundEvents.ENTITY_GHAST_SHOOT;
-            case "witch" -> SoundEvents.ENTITY_WITCH_THROW;
-            case "snow_golem" -> SoundEvents.ENTITY_SNOW_GOLEM_SHOOT;
-            case "warden" -> SoundEvents.ENTITY_WARDEN_SONIC_BOOM;
-            case "wither" -> SoundEvents.ENTITY_WITHER_SHOOT;
-            case "breeze" -> SoundEvents.ENTITY_BREEZE_SHOOT;
-            case "llama", "trader_llama" -> SoundEvents.ENTITY_LLAMA_SPIT;
-            case "guardian" -> SoundEvents.ENTITY_GUARDIAN_ATTACK;
-            case "elder_guardian" -> SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE;
-            default -> SoundEvents.ENTITY_ARROW_SHOOT;
+            case "skeleton", "stray", "bogged" -> SoundEvents.SKELETON_SHOOT;
+            case "pillager" -> SoundEvents.CROSSBOW_SHOOT;
+            case "blaze" -> SoundEvents.BLAZE_SHOOT;
+            case "ghast" -> SoundEvents.GHAST_SHOOT;
+            case "witch" -> SoundEvents.WITCH_THROW;
+            case "snow_golem" -> SoundEvents.SNOW_GOLEM_SHOOT;
+            case "warden" -> SoundEvents.WARDEN_SONIC_BOOM;
+            case "wither" -> SoundEvents.WITHER_SHOOT;
+            case "breeze" -> SoundEvents.BREEZE_SHOOT;
+            case "llama", "trader_llama" -> SoundEvents.LLAMA_SPIT;
+            case "guardian" -> SoundEvents.GUARDIAN_ATTACK;
+            case "elder_guardian" -> SoundEvents.ELDER_GUARDIAN_CURSE;
+            default -> SoundEvents.ARROW_SHOOT;
         };
         world.playSound(null, attacker.blockPosition(), sound, SoundSource.HOSTILE, 1.0f, 1.0f);
     }
@@ -1228,7 +1231,7 @@ public class ArenaMob {
         // Entity status 4 = PLAY_ATTACK_SOUND / attack animation
         // This triggers native attack animations for mobs like Iron Golem,
         // Ravager, Hoglin, Zoglin, etc. that don't use swing for their animation
-        if (attacker instanceof net.minecraft.world.entity.animal.IronGolem
+        if (attacker instanceof net.minecraft.world.entity.animal.golem.IronGolem
                 || attacker instanceof net.minecraft.world.entity.monster.Ravager
                 || attacker instanceof net.minecraft.world.entity.monster.hoglin.Hoglin
                 || attacker instanceof net.minecraft.world.entity.monster.Zoglin) {
@@ -1239,13 +1242,13 @@ public class ArenaMob {
     private void playAttackSound(ServerLevel world, Vec3 pos) {
         float pitch = 0.8f + world.getRandom().nextFloat() * 0.4f;
         MobCardDefinition def = sourceCard.getDefinition();
-        if (def == null) { world.playSound(null, pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundSource.HOSTILE, 0.8f, pitch); return; }
+        if (def == null) { world.playSound(null, pos.x, pos.y, pos.z, SoundEvents.PLAYER_ATTACK_STRONG, SoundSource.HOSTILE, 0.8f, pitch); return; }
         var sound = switch (def.category()) {
-            case UNDEAD -> SoundEvents.ENTITY_ZOMBIE_ATTACK_WOODEN_DOOR;
-            case GOLEM -> SoundEvents.ENTITY_IRON_GOLEM_ATTACK;
-            case BOSS -> SoundEvents.ENTITY_WARDEN_ATTACK_IMPACT;
-            case ARTHROPOD -> SoundEvents.ENTITY_SPIDER_AMBIENT;
-            default -> SoundEvents.ENTITY_PLAYER_ATTACK_STRONG;
+            case UNDEAD -> SoundEvents.ZOMBIE_ATTACK_WOODEN_DOOR;
+            case GOLEM -> SoundEvents.IRON_GOLEM_ATTACK;
+            case BOSS -> SoundEvents.WARDEN_ATTACK_IMPACT;
+            case ARTHROPOD -> SoundEvents.SPIDER_AMBIENT;
+            default -> SoundEvents.PLAYER_ATTACK_STRONG;
         };
         world.playSound(null, pos.x, pos.y, pos.z, sound, SoundSource.HOSTILE, 0.8f, pitch);
     }
@@ -1282,7 +1285,7 @@ public class ArenaMob {
             world.sendParticles(ParticleTypes.SOUL, e.getX(), e.getY() + 0.5, e.getZ(), 10, 0.3, 0.5, 0.3, 0.05);
             world.sendParticles(ParticleTypes.SMOKE, e.getX(), e.getY() + 0.5, e.getZ(), 8, 0.3, 0.5, 0.3, 0.02);
             world.sendParticles(ParticleTypes.CLOUD, e.getX(), e.getY() + 0.5, e.getZ(), 5, 0.2, 0.3, 0.2, 0.03);
-            world.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.ENTITY_GENERIC_DEATH, SoundSource.HOSTILE, 1.0f, 0.8f + world.getRandom().nextFloat() * 0.4f);
+            world.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.GENERIC_DEATH, SoundSource.HOSTILE, 1.0f, 0.8f + world.getRandom().nextFloat() * 0.4f);
             e.discard();
         }
         removeHpBar(world);
@@ -1340,7 +1343,7 @@ public class ArenaMob {
         }
 
         world.playSound(null, parent.getX(), parent.getY(), parent.getZ(),
-                SoundEvents.ENTITY_SLIME_SQUISH, SoundSource.HOSTILE, 1.0f, 0.8f);
+                SoundEvents.SLIME_SQUISH, SoundSource.HOSTILE, 1.0f, 0.8f);
     }
 
     // ================================================================
@@ -1614,8 +1617,8 @@ public class ArenaMob {
         List<ArmorStand> toRemove = new ArrayList<>();
         for (Entity e : world.getAllEntities()) {
             if (e instanceof ArmorStand as) {
-                if (e.getTags().contains("arenaclash_dmg_number")) {
-                    e.setPosition(e.getX(), e.getY() + 0.04, e.getZ());
+                if (e.entityTags().contains("arenaclash_dmg_number")) {
+                    e.setPos(e.getX(), e.getY() + 0.04, e.getZ());
                     if (e.tickCount > 0) toRemove.add(as);
                 }
             }
@@ -1627,8 +1630,8 @@ public class ArenaMob {
     public static void tickProjectileCleanup(ServerLevel world) {
         List<Entity> toRemove = new ArrayList<>();
         for (Entity e : world.getAllEntities()) {
-            boolean isMobProj = e.getTags().contains("arenaclash_mob_projectile");
-            boolean isTowerArrow = e.getTags().contains("arenaclash_tower_arrow");
+            boolean isMobProj = e.entityTags().contains("arenaclash_mob_projectile");
+            boolean isTowerArrow = e.entityTags().contains("arenaclash_tower_arrow");
             if (isMobProj || isTowerArrow) {
                 // Tower arrows: let them fly and stick visually, remove after 5 sec
                 if (isTowerArrow) {

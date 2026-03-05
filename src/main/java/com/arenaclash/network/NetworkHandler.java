@@ -12,7 +12,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,7 +28,7 @@ public class NetworkHandler {
      * Sync game phase and timer to client.
      */
     public record GameStateSync(String phase, int timerTicks, int round) implements CustomPacketPayload {
-        public static final Type<GameStateSync> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "game_state"));
+        public static final Type<GameStateSync> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "game_state"));
         public static final StreamCodec<RegistryFriendlyByteBuf, GameStateSync> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, GameStateSync::phase,
                 ByteBufCodecs.INT, GameStateSync::timerTicks,
@@ -42,7 +42,7 @@ public class NetworkHandler {
      * Sync card inventory to client.
      */
     public record CardInventorySync(CompoundTag data) implements CustomPacketPayload {
-        public static final Type<CardInventorySync> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "card_sync"));
+        public static final Type<CardInventorySync> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "card_sync"));
         public static final StreamCodec<RegistryFriendlyByteBuf, CardInventorySync> CODEC = StreamCodec.composite(
                 ByteBufCodecs.COMPOUND_TAG, CardInventorySync::data,
                 CardInventorySync::new
@@ -54,7 +54,7 @@ public class NetworkHandler {
      * Notify client that a card was obtained (for totem animation).
      */
     public record CardObtained(String mobId, String displayName) implements CustomPacketPayload {
-        public static final Type<CardObtained> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "card_obtained"));
+        public static final Type<CardObtained> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "card_obtained"));
         public static final StreamCodec<RegistryFriendlyByteBuf, CardObtained> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, CardObtained::mobId,
                 ByteBufCodecs.STRING_UTF8, CardObtained::displayName,
@@ -67,7 +67,7 @@ public class NetworkHandler {
      * Sync deployment slot state to client.
      */
     public record DeploymentSlotSync(CompoundTag data) implements CustomPacketPayload {
-        public static final Type<DeploymentSlotSync> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "slot_sync"));
+        public static final Type<DeploymentSlotSync> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "slot_sync"));
         public static final StreamCodec<RegistryFriendlyByteBuf, DeploymentSlotSync> CODEC = StreamCodec.composite(
                 ByteBufCodecs.COMPOUND_TAG, DeploymentSlotSync::data,
                 DeploymentSlotSync::new
@@ -79,7 +79,7 @@ public class NetworkHandler {
      * Battle result notification.
      */
     public record BattleResultNotify(String resultType, String winner, CompoundTag stats) implements CustomPacketPayload {
-        public static final Type<BattleResultNotify> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "battle_result"));
+        public static final Type<BattleResultNotify> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "battle_result"));
         public static final StreamCodec<RegistryFriendlyByteBuf, BattleResultNotify> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, BattleResultNotify::resultType,
                 ByteBufCodecs.STRING_UTF8, BattleResultNotify::winner,
@@ -94,7 +94,7 @@ public class NetworkHandler {
      * Sent when the player right-clicks the workbench and passes all server-side checks.
      */
     public record OpenUpgradeGui() implements CustomPacketPayload {
-        public static final Type<OpenUpgradeGui> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "open_upgrade_gui"));
+        public static final Type<OpenUpgradeGui> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "open_upgrade_gui"));
         public static final StreamCodec<RegistryFriendlyByteBuf, OpenUpgradeGui> CODEC = StreamCodec.unit(new OpenUpgradeGui());
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -105,7 +105,7 @@ public class NetworkHandler {
      * Client requests to place a card in a deployment slot.
      */
     public record PlaceCardRequest(String cardId, String laneId, int slotIndex) implements CustomPacketPayload {
-        public static final Type<PlaceCardRequest> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "place_card"));
+        public static final Type<PlaceCardRequest> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "place_card"));
         public static final StreamCodec<RegistryFriendlyByteBuf, PlaceCardRequest> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, PlaceCardRequest::cardId,
                 ByteBufCodecs.STRING_UTF8, PlaceCardRequest::laneId,
@@ -119,7 +119,7 @@ public class NetworkHandler {
      * Client requests to remove a card from a deployment slot.
      */
     public record RemoveCardRequest(String laneId, int slotIndex) implements CustomPacketPayload {
-        public static final Type<RemoveCardRequest> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "remove_card"));
+        public static final Type<RemoveCardRequest> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "remove_card"));
         public static final StreamCodec<RegistryFriendlyByteBuf, RemoveCardRequest> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, RemoveCardRequest::laneId,
                 ByteBufCodecs.INT, RemoveCardRequest::slotIndex,
@@ -132,7 +132,7 @@ public class NetworkHandler {
      * Client rings the bell (ready / retreat).
      */
     public record RingBell() implements CustomPacketPayload {
-        public static final Type<RingBell> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "ring_bell"));
+        public static final Type<RingBell> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "ring_bell"));
         public static final StreamCodec<RegistryFriendlyByteBuf, RingBell> CODEC = StreamCodec.unit(new RingBell());
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -141,7 +141,7 @@ public class NetworkHandler {
      * Client requests to open card inventory GUI.
      */
     public record OpenCardGui() implements CustomPacketPayload {
-        public static final Type<OpenCardGui> ID = new Type<>(ResourceLocation.fromNamespaceAndPath("arenaclash", "open_cards"));
+        public static final Type<OpenCardGui> ID = new Type<>(Identifier.fromNamespaceAndPath("arenaclash", "open_cards"));
         public static final StreamCodec<RegistryFriendlyByteBuf, OpenCardGui> CODEC = StreamCodec.unit(new OpenCardGui());
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }

@@ -575,10 +575,10 @@ public class ArenaManager {
             // Clean up floating damage numbers, HP bars, arrows, projectiles
             List<Entity> toRemove = new ArrayList<>();
             for (Entity e : arenaWorld.getAllEntities()) {
-                if (e.getTags().contains("arenaclash_dmg_number")
-                        || e.getTags().contains("arenaclash_tower_arrow")
-                        || e.getTags().contains("arenaclash_mob_hp")
-                        || e.getTags().contains("arenaclash_mob_projectile")) {
+                if (e.entityTags().contains("arenaclash_dmg_number")
+                        || e.entityTags().contains("arenaclash_tower_arrow")
+                        || e.entityTags().contains("arenaclash_mob_hp")
+                        || e.entityTags().contains("arenaclash_mob_projectile")) {
                     toRemove.add(e);
                 }
             }

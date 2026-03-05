@@ -6,8 +6,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.projectile.AbstractArrow;
-import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.entity.projectile.arrow.Arrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.particles.DustParticleOptions;
@@ -197,8 +197,8 @@ public class ArenaStructure {
         GameConfig cfg = GameConfig.get();
         double radius = cfg.throneAoeRange;
         DustParticleOptions dust = owner == TeamSide.PLAYER1
-                ? new DustParticleOptions(new org.joml.Vector3f(0.2f, 0.5f, 1.0f), 1.5f)
-                : new DustParticleOptions(new org.joml.Vector3f(1.0f, 0.2f, 0.2f), 1.5f);
+                ? new DustParticleOptions((51 << 16) | (128 << 8) | 255, 1.5f)
+                : new DustParticleOptions((255 << 16) | (51 << 8) | 51, 1.5f);
 
         for (int i = 0; i < 32; i++) {
             double angle = (Math.PI * 2) * i / 32;
