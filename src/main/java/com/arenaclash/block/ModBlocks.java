@@ -1,17 +1,17 @@
 package com.arenaclash.block;
 
 import com.arenaclash.ArenaClash;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.MapColor;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.util.Identifier;
+import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Registers all custom blocks and block items for Arena Clash.
@@ -19,26 +19,26 @@ import net.minecraft.util.Identifier;
 public class ModBlocks {
 
     public static final Block CARD_UPGRADE_WORKBENCH = new CardUpgradeWorkbenchBlock(
-            AbstractBlock.Settings.create()
-                    .mapColor(MapColor.SPRUCE_BROWN)
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_BROWN)
                     .strength(2.5f)
-                    .sounds(BlockSoundGroup.WOOD)
+                    .sound(SoundType.WOOD)
     );
 
     public static void register() {
         // Register block
-        Registry.register(Registries.BLOCK,
-                Identifier.of(ArenaClash.MOD_ID, "card_upgrade_workbench"),
+        Registry.register(BuiltInRegistries.BLOCK,
+                ResourceLocation.fromNamespaceAndPath(ArenaClash.MOD_ID, "card_upgrade_workbench"),
                 CARD_UPGRADE_WORKBENCH);
 
         // Register block item
-        Registry.register(Registries.ITEM,
-                Identifier.of(ArenaClash.MOD_ID, "card_upgrade_workbench"),
-                new BlockItem(CARD_UPGRADE_WORKBENCH, new Item.Settings()));
+        Registry.register(BuiltInRegistries.ITEM,
+                ResourceLocation.fromNamespaceAndPath(ArenaClash.MOD_ID, "card_upgrade_workbench"),
+                new BlockItem(CARD_UPGRADE_WORKBENCH, new Item.Properties()));
 
         // Add to creative tab
-        ItemGroupEvents.modifyEntriesEvent(ItemGroups.FUNCTIONAL).register(entries ->
-                entries.add(CARD_UPGRADE_WORKBENCH));
+        CreativeModeTabEvents.modifyOutput(CreativeModeTabs.FUNCTIONAL_BLOCKS).register((registeredEntries, output) ->
+                output.accept(CARD_UPGRADE_WORKBENCH));
 
         ArenaClash.LOGGER.info("Arena Clash blocks registered");
     }

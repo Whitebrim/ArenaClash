@@ -1,7 +1,7 @@
 package com.arenaclash.card;
 
 import com.arenaclash.card.MobCardDefinition.MobCategory;
-import net.minecraft.entity.EntityType;
+import net.minecraft.world.entity.EntityType;
 
 import java.util.*;
 

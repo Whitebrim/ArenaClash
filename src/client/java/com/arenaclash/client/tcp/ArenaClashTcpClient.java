@@ -3,8 +3,8 @@ package com.arenaclash.client.tcp;
 import com.arenaclash.client.ArenaClashClient;
 import com.arenaclash.tcp.SyncProtocol;
 import com.google.gson.JsonObject;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,7 +127,7 @@ public class ArenaClashTcpClient {
 
     private void handleMessage(JsonObject msg) {
         String type = SyncProtocol.getType(msg);
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
 
         switch (type) {
             case SyncProtocol.S2C_WELCOME -> {
@@ -158,12 +158,12 @@ public class ArenaClashTcpClient {
                     ArenaClashClient.deploymentSlotData = null;
 
                     // Send inventory sync before transitioning to arena
-                    MinecraftClient mc = MinecraftClient.getInstance();
-                    if (mc.player != null && mc.isInSingleplayer()) {
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc.player != null && mc.isLocalServer()) {
                         try {
-                            net.minecraft.nbt.NbtCompound invNbt = new net.minecraft.nbt.NbtCompound();
-                            net.minecraft.nbt.NbtList items = new net.minecraft.nbt.NbtList();
-                            mc.player.getInventory().writeNbt(items);
+                            net.minecraft.nbt.CompoundTag invNbt = new net.minecraft.nbt.CompoundTag();
+                            net.minecraft.nbt.ListTag items = new net.minecraft.nbt.ListTag();
+                            mc.player.getInventory().save(items);
                             invNbt.put("Items", items);
                             send(SyncProtocol.inventorySync(invNbt.toString()));
                         } catch (Exception e) {
@@ -217,20 +217,20 @@ public class ArenaClashTcpClient {
                             Object[] args = new Object[argsArr.size()];
                             for (int i = 0; i < argsArr.size(); i++) {
                                 String argStr = argsArr.get(i).getAsString();
-                                // If arg is a translation key, wrap it in Text.translatable()
+                                // If arg is a translation key, wrap it in Component.translatable()
                                 if (argStr.startsWith("arenaclash.mob.") || argStr.startsWith("arenaclash.category.") || argStr.startsWith("arenaclash.lane.")) {
-                                    args[i] = Text.translatable(argStr);
+                                    args[i] = Component.translatable(argStr);
                                 } else {
                                     args[i] = argStr;
                                 }
                             }
-                            client.player.sendMessage(Text.translatable(key, args));
+                            client.player.sendSystemMessage(Component.translatable(key, args));
                         } else {
-                            client.player.sendMessage(Text.translatable(key));
+                            client.player.sendSystemMessage(Component.translatable(key));
                         }
                     } else {
                         String text = msg.get("text").getAsString();
-                        client.player.sendMessage(Text.literal(text));
+                        client.player.sendSystemMessage(Component.literal(text));
                     }
                 }
             }
@@ -243,23 +243,23 @@ public class ArenaClashTcpClient {
                 currentPhase = "GAME_OVER";
 
                 if (client.player != null) {
-                    String playerName = client.getSession().getUsername();
+                    String playerName = client.getUser().getName();
                     boolean isWinner = winner.equals(playerName);
                     boolean isDraw = "Draw".equals(winner);
 
-                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.separator"));
+                    client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.separator"));
                     if (isDraw) {
-                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.draw"));
+                        client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.draw"));
                     } else if (isWinner) {
-                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.victory"));
+                        client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.victory"));
                     } else {
-                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.defeat"));
+                        client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.defeat"));
                     }
-                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.winner", winner));
+                    client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.winner", winner));
                     if (!details.isEmpty()) {
-                        client.player.sendMessage(Text.translatable("arenaclash.msg.result.details", details));
+                        client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.details", details));
                     }
-                    client.player.sendMessage(Text.translatable("arenaclash.msg.result.separator"));
+                    client.player.sendSystemMessage(Component.translatable("arenaclash.msg.result.separator"));
                 }
             }
 

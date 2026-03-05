@@ -3,14 +3,15 @@ package com.arenaclash.world;
 import com.arenaclash.arena.ArenaBuilder;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.entity.Entity;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Manages the arena world (the default server overworld).
@@ -26,15 +27,15 @@ public class WorldManager {
     /**
      * Get the arena world (the default overworld).
      */
-    public ServerWorld getArenaWorld() {
-        return server.getOverworld();
+    public ServerLevel getArenaWorld() {
+        return server.overworld();
     }
 
     /**
      * Teleport a player to the arena at their team's side.
      */
-    public void teleportToArena(ServerPlayerEntity player, TeamSide team) {
-        ServerWorld arena = getArenaWorld();
+    public void teleportToArena(ServerPlayer player, TeamSide team) {
+        ServerLevel arena = getArenaWorld();
         GameConfig cfg = GameConfig.get();
 
         int x = cfg.arenaCenterX;
@@ -45,8 +46,8 @@ public class WorldManager {
         // P1 spawns at negative Z side, P2 at positive Z side
         int spawnZ = team == TeamSide.PLAYER1 ? z - halfLen - 15 : z + halfLen + 15;
 
-        player.teleport(arena, x + 0.5, y + 1, spawnZ + 0.5,
-                team == TeamSide.PLAYER1 ? 0 : 180, 0);
+        player.teleportTo(arena, x + 0.5, y + 1, spawnZ + 0.5, Set.of(),
+                team == TeamSide.PLAYER1 ? 0 : 180, 0, false);
     }
 
     /**
@@ -54,11 +55,11 @@ public class WorldManager {
      * They will be disconnected and return to the main menu.
      */
     public void kickAllPlayers() {
-        List<ServerPlayerEntity> players = new ArrayList<>(server.getPlayerManager().getPlayerList());
-        for (ServerPlayerEntity player : players) {
+        List<ServerPlayer> players = new ArrayList<>(server.getPlayerList().getPlayers());
+        for (ServerPlayer player : players) {
             try {
-                player.networkHandler.disconnect(
-                        Text.translatable("arenaclash.msg.game_ended"));
+                player.connection.disconnect(
+                        Component.translatable("arenaclash.msg.game_ended"));
             } catch (Exception ignored) {}
         }
     }
@@ -69,7 +70,7 @@ public class WorldManager {
      * to ensure disconnected player entities are fully gone.
      */
     public void cleanupArenaWorld() {
-        ServerWorld arena = getArenaWorld();
+        ServerLevel arena = getArenaWorld();
         if (arena == null) return;
 
         // Remove ALL non-player entities from the world — mobs, armor stands,
@@ -97,11 +98,11 @@ public class WorldManager {
      * Iterates twice to catch entities that might have been spawned
      * by other entities during the first pass (e.g. item drops on death).
      */
-    private void removeAllEntities(ServerWorld world) {
+    private void removeAllEntities(ServerLevel world) {
         for (int pass = 0; pass < 2; pass++) {
             List<Entity> toRemove = new ArrayList<>();
-            for (Entity entity : world.iterateEntities()) {
-                if (entity instanceof ServerPlayerEntity) continue;
+            for (Entity entity : world.getAllEntities()) {
+                if (entity instanceof ServerPlayer) continue;
                 toRemove.add(entity);
             }
             for (Entity entity : toRemove) {

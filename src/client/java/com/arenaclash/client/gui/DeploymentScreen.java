@@ -5,12 +5,12 @@ import com.arenaclash.card.MobCard;
 import com.arenaclash.card.MobCardDefinition;
 import com.arenaclash.network.NetworkHandler;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.resources.language.I18n;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +23,7 @@ import java.util.List;
  */
 public class DeploymentScreen extends Screen {
     private final CardInventory inventory;
-    private final NbtCompound slotData;
+    private final CompoundTag slotData;
 
     // Selection state
     private MobCard selectedCard = null;
@@ -51,8 +51,8 @@ public class DeploymentScreen extends Screen {
     private final String[][] slotCards = new String[3][4]; // [lane][slot] = mob display name or null
     private final boolean[][] slotOccupied = new boolean[3][4];
 
-    public DeploymentScreen(NbtCompound inventoryData, NbtCompound slotData) {
-        super(Text.translatable("arenaclash.screen.deploy.title"));
+    public DeploymentScreen(CompoundTag inventoryData, CompoundTag slotData) {
+        super(Component.translatable("arenaclash.screen.deploy.title"));
         this.inventory = CardInventory.fromNbt(inventoryData);
         this.slotData = slotData;
         parseSlotData();
@@ -66,17 +66,17 @@ public class DeploymentScreen extends Screen {
         for (int l = 0; l < 3; l++) {
             String laneName = LANE_NAMES[l];
             if (!slotData.contains(laneName)) continue;
-            NbtCompound laneNbt = slotData.getCompound(laneName);
+            CompoundTag laneNbt = slotData.getCompound(laneName);
             for (int s = 0; s < 4; s++) {
                 String key = "slot_" + s;
                 if (!laneNbt.contains(key)) continue;
-                NbtCompound slotNbt = laneNbt.getCompound(key);
+                CompoundTag slotNbt = laneNbt.getCompound(key);
                 slotOccupied[l][s] = !slotNbt.getBoolean("empty");
                 if (slotOccupied[l][s] && slotNbt.contains("card")) {
-                    NbtCompound cardNbt = slotNbt.getCompound("card");
+                    CompoundTag cardNbt = slotNbt.getCompound("card");
                     String mobId = cardNbt.getString("mobId");
                     var def = com.arenaclash.card.MobCardRegistry.getById(mobId);
-                    slotCards[l][s] = def != null ? I18n.translate(def.translationKey()) : mobId;
+                    slotCards[l][s] = def != null ? I18n.get(def.translationKey()) : mobId;
                 }
             }
         }
@@ -90,34 +90,34 @@ public class DeploymentScreen extends Screen {
         int listX = 20;
         int listY = 50;
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("▲"), b -> {
+        this.addRenderableWidget(Button.builder(Component.literal("\u25B2"), b -> {
             if (cardScrollOffset > 0) cardScrollOffset--;
             persistedScrollOffset = cardScrollOffset;
-        }).dimensions(listX + CARD_LIST_WIDTH + 5, listY, 18, 18).build());
+        }).bounds(listX + CARD_LIST_WIDTH + 5, listY, 18, 18).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("▼"), b -> {
+        this.addRenderableWidget(Button.builder(Component.literal("\u25BC"), b -> {
             int max = Math.max(0, inventory.getCardCount() - CARDS_VISIBLE);
             if (cardScrollOffset < max) cardScrollOffset++;
             persistedScrollOffset = cardScrollOffset;
-        }).dimensions(listX + CARD_LIST_WIDTH + 5, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT - 18, 18, 18).build());
+        }).bounds(listX + CARD_LIST_WIDTH + 5, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT - 18, 18, 18).build());
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // Dark overlay without blur (renderBackground in 1.21.1 applies blur shader)
-        ctx.fill(0, 0, width, height, 0xC0101010);
+        guiGraphics.fill(0, 0, width, height, 0xC0101010);
 
         // Title
-        ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.title"), width / 2, 10, 0xFFFFFF);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.screen.deploy.hint"),
+        guiGraphics.drawCenteredString(font, I18n.get("arenaclash.screen.deploy.title"), width / 2, 10, 0xFFFFFF);
+        guiGraphics.drawCenteredString(font,
+                I18n.get("arenaclash.screen.deploy.hint"),
                 width / 2, 25, 0x888888);
 
         // === Left: Card List ===
         int listX = 20;
         int listY = 50;
-        ctx.fill(listX - 2, listY - 2, listX + CARD_LIST_WIDTH + 2, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT + 2, 0x80000000);
-        ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.cards_count", String.valueOf(inventory.getCardCount())), listX, listY - 14, 0xFFFF00);
+        guiGraphics.fill(listX - 2, listY - 2, listX + CARD_LIST_WIDTH + 2, listY + CARDS_VISIBLE * CARD_ENTRY_HEIGHT + 2, 0x80000000);
+        guiGraphics.drawString(font, I18n.get("arenaclash.screen.deploy.cards_count", String.valueOf(inventory.getCardCount())), listX, listY - 14, 0xFFFF00);
 
         List<MobCard> cards = inventory.getAllCards();
         for (int i = cardScrollOffset; i < Math.min(cardScrollOffset + CARDS_VISIBLE, cards.size()); i++) {
@@ -131,15 +131,15 @@ public class DeploymentScreen extends Screen {
 
             // Background
             int bgColor = isSelected ? 0xC0445588 : (isHovered ? 0x80444444 : 0x40222222);
-            ctx.fill(listX, y, listX + CARD_LIST_WIDTH, y + CARD_ENTRY_HEIGHT - 1, bgColor);
+            guiGraphics.fill(listX, y, listX + CARD_LIST_WIDTH, y + CARD_ENTRY_HEIGHT - 1, bgColor);
 
             // Name
             String lvSuffix = com.arenaclash.card.MobCardRegistry.isUpgradeLocked(card.getMobId())
-                    ? "" : " " + I18n.translate("arenaclash.screen.deploy.lv", String.valueOf(card.getLevel()));
-            ctx.drawTextWithShadow(textRenderer, I18n.translate(def.translationKey()) + lvSuffix, listX + 4, y + 2, 0xFFFFFF);
+                    ? "" : " " + I18n.get("arenaclash.screen.deploy.lv", String.valueOf(card.getLevel()));
+            guiGraphics.drawString(font, I18n.get(def.translationKey()) + lvSuffix, listX + 4, y + 2, 0xFFFFFF);
             // Stats line
-            String stats = String.format("♥%.0f ⚔%.0f ⚡%.1f", card.getHP(), card.getAttack(), card.getSpeed());
-            ctx.drawTextWithShadow(textRenderer, stats, listX + 4, y + 14, 0xAAAAAA);
+            String stats = String.format("\u2665%.0f \u2694%.0f \u26A1%.1f", card.getHP(), card.getAttack(), card.getSpeed());
+            guiGraphics.drawString(font, stats, listX + 4, y + 14, 0xAAAAAA);
         }
 
         // === Right: Lane Slots ===
@@ -150,7 +150,7 @@ public class DeploymentScreen extends Screen {
             int laneX = slotsStartX + l * (SLOT_SIZE * 2 + LANE_GAP);
 
             // Lane title
-            ctx.drawCenteredTextWithShadow(textRenderer, "§b" + I18n.translate(LANE_DISPLAY_KEYS[l]),
+            guiGraphics.drawCenteredString(font, "\u00A7b" + I18n.get(LANE_DISPLAY_KEYS[l]),
                     laneX + SLOT_SIZE, slotsStartY - 14, 0x55FFFF);
 
             // 2x2 grid
@@ -165,16 +165,16 @@ public class DeploymentScreen extends Screen {
 
                 // Slot background
                 int slotBg = occupied ? 0xC0224422 : (isHovered ? 0x80555555 : 0x60333333);
-                ctx.fill(sx, sy, sx + SLOT_SIZE - 1, sy + SLOT_SIZE - 1, slotBg);
-                ctx.drawBorder(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1, isHovered ? 0xFFFFFF00 : 0xFF666666);
+                guiGraphics.fill(sx, sy, sx + SLOT_SIZE - 1, sy + SLOT_SIZE - 1, slotBg);
+                guiGraphics.renderOutline(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1, isHovered ? 0xFFFFFF00 : 0xFF666666);
 
                 if (occupied && slotCards[l][s] != null) {
                     // Draw mob name in slot
                     String name = slotCards[l][s];
-                    if (name.length() > 8) name = name.substring(0, 7) + "…";
-                    ctx.drawCenteredTextWithShadow(textRenderer, name, sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x44FF44);
+                    if (name.length() > 8) name = name.substring(0, 7) + "\u2026";
+                    guiGraphics.drawCenteredString(font, name, sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x44FF44);
                 } else {
-                    ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.empty"), sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x444444);
+                    guiGraphics.drawCenteredString(font, I18n.get("arenaclash.screen.deploy.empty"), sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2 - 4, 0x444444);
                 }
             }
         }
@@ -182,16 +182,16 @@ public class DeploymentScreen extends Screen {
         // Selected card indicator
         if (selectedCard != null) {
             MobCardDefinition def = selectedCard.getDefinition();
-            String name = def != null ? I18n.translate(def.translationKey()) : "???";
-            ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.screen.deploy.selected", name), slotsStartX, slotsStartY + SLOT_SIZE * 2 + 10, 0x44FF44);
+            String name = def != null ? I18n.get(def.translationKey()) : "???";
+            guiGraphics.drawString(font, I18n.get("arenaclash.screen.deploy.selected", name), slotsStartX, slotsStartY + SLOT_SIZE * 2 + 10, 0x44FF44);
         }
 
         // Keybind hints
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                I18n.translate("arenaclash.screen.deploy.keybinds"),
+        guiGraphics.drawCenteredString(font,
+                I18n.get("arenaclash.screen.deploy.keybinds"),
                 width / 2, height - 15, 0x888888);
 
-        super.render(ctx, mouseX, mouseY, delta);
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     @Override
@@ -231,7 +231,7 @@ public class DeploymentScreen extends Screen {
                         // Optimistic UI update
                         slotOccupied[l][s] = true;
                         var def = selectedCard.getDefinition();
-                        slotCards[l][s] = def != null ? I18n.translate(def.translationKey()) : "Mob";
+                        slotCards[l][s] = def != null ? I18n.get(def.translationKey()) : "Mob";
                         inventory.removeCard(selectedCard.getCardId());
                         selectedCard = null;
                         return true;
@@ -250,9 +250,9 @@ public class DeploymentScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double hAmount, double vAmount) {
-        if (vAmount > 0 && cardScrollOffset > 0) cardScrollOffset--;
-        else if (vAmount < 0) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY > 0 && cardScrollOffset > 0) cardScrollOffset--;
+        else if (scrollY < 0) {
             int max = Math.max(0, inventory.getCardCount() - CARDS_VISIBLE);
             if (cardScrollOffset < max) cardScrollOffset++;
         }
@@ -261,8 +261,8 @@ public class DeploymentScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        // No-op: prevent 1.21.1 from applying blur shader
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // No-op: prevent blur shader behind the screen
     }
 
     @Override

@@ -3,11 +3,11 @@ package com.arenaclash.arena;
 import com.arenaclash.card.MobCard;
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.Entity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 
 import java.util.*;
 
@@ -18,7 +18,7 @@ import java.util.*;
  * Center lane routes directly to enemy throne. Mobs no longer target spawn points.
  */
 public class ArenaManager {
-    private ServerWorld arenaWorld;
+    private ServerLevel arenaWorld;
     private final Map<Lane.LaneId, Lane> lanes = new EnumMap<>(Lane.LaneId.class);
     private final List<ArenaStructure> structures = new ArrayList<>();
     private final List<ArenaMob> activeMobs = new ArrayList<>();
@@ -33,7 +33,7 @@ public class ArenaManager {
     private final Map<TeamSide, BlockPos> bellPositions = new EnumMap<>(TeamSide.class);
 
     // Build zone bounds for each team
-    private final Map<TeamSide, Box> buildZones = new EnumMap<>(TeamSide.class);
+    private final Map<TeamSide, AABB> buildZones = new EnumMap<>(TeamSide.class);
 
     // Projectile tracking system: damage is applied when projectiles reach targets
     private final ProjectileTracker projectileTracker = new ProjectileTracker();
@@ -50,7 +50,7 @@ public class ArenaManager {
         }
     }
 
-    public void initialize(ServerWorld world) {
+    public void initialize(ServerLevel world) {
         this.arenaWorld = world;
         setupLanes();
         setupStructures();
@@ -131,14 +131,14 @@ public class ArenaManager {
         ArenaStructure p1Throne = new ArenaStructure(
                 ArenaStructure.StructureType.THRONE, TeamSide.PLAYER1,
                 new BlockPos(cx, y, p1BaseZ),
-                new Box(cx - 2, y, p1BaseZ - 2, cx + 2, y + 5, p1BaseZ + 2));
+                new AABB(cx - 2, y, p1BaseZ - 2, cx + 2, y + 5, p1BaseZ + 2));
         structures.add(p1Throne);
 
         // P1 Left Tower
         ArenaStructure p1LeftTower = new ArenaStructure(
                 ArenaStructure.StructureType.TOWER, TeamSide.PLAYER1,
                 new BlockPos(cx - sep, y, p1BaseZ + 3),
-                new Box(cx - sep - 1, y, p1BaseZ + 2, cx - sep + 1, y + 4, p1BaseZ + 4));
+                new AABB(cx - sep - 1, y, p1BaseZ + 2, cx - sep + 1, y + 4, p1BaseZ + 4));
         p1LeftTower.setAssociatedLane(Lane.LaneId.LEFT);
         structures.add(p1LeftTower);
 
@@ -146,7 +146,7 @@ public class ArenaManager {
         ArenaStructure p1RightTower = new ArenaStructure(
                 ArenaStructure.StructureType.TOWER, TeamSide.PLAYER1,
                 new BlockPos(cx + sep, y, p1BaseZ + 3),
-                new Box(cx + sep - 1, y, p1BaseZ + 2, cx + sep + 1, y + 4, p1BaseZ + 4));
+                new AABB(cx + sep - 1, y, p1BaseZ + 2, cx + sep + 1, y + 4, p1BaseZ + 4));
         p1RightTower.setAssociatedLane(Lane.LaneId.RIGHT);
         structures.add(p1RightTower);
 
@@ -154,14 +154,14 @@ public class ArenaManager {
         ArenaStructure p2Throne = new ArenaStructure(
                 ArenaStructure.StructureType.THRONE, TeamSide.PLAYER2,
                 new BlockPos(cx, y, p2BaseZ),
-                new Box(cx - 2, y, p2BaseZ - 2, cx + 2, y + 5, p2BaseZ + 2));
+                new AABB(cx - 2, y, p2BaseZ - 2, cx + 2, y + 5, p2BaseZ + 2));
         structures.add(p2Throne);
 
         // P2 Left Tower
         ArenaStructure p2LeftTower = new ArenaStructure(
                 ArenaStructure.StructureType.TOWER, TeamSide.PLAYER2,
                 new BlockPos(cx - sep, y, p2BaseZ - 3),
-                new Box(cx - sep - 1, y, p2BaseZ - 4, cx - sep + 1, y + 4, p2BaseZ - 2));
+                new AABB(cx - sep - 1, y, p2BaseZ - 4, cx - sep + 1, y + 4, p2BaseZ - 2));
         p2LeftTower.setAssociatedLane(Lane.LaneId.LEFT);
         structures.add(p2LeftTower);
 
@@ -169,7 +169,7 @@ public class ArenaManager {
         ArenaStructure p2RightTower = new ArenaStructure(
                 ArenaStructure.StructureType.TOWER, TeamSide.PLAYER2,
                 new BlockPos(cx + sep, y, p2BaseZ - 3),
-                new Box(cx + sep - 1, y, p2BaseZ - 4, cx + sep + 1, y + 4, p2BaseZ - 2));
+                new AABB(cx + sep - 1, y, p2BaseZ - 4, cx + sep + 1, y + 4, p2BaseZ - 2));
         p2RightTower.setAssociatedLane(Lane.LaneId.RIGHT);
         structures.add(p2RightTower);
     }
@@ -216,8 +216,8 @@ public class ArenaManager {
         // P1 build zone: right corner behind base (maxX side, behind throne toward minZ)
         int p1MinZ = p1BaseZ - 5;
         int p1MinX = maxX - zoneSize + 1;
-        // Box.contains uses exclusive upper bound, so add 1 to max values
-        buildZones.put(TeamSide.PLAYER1, new Box(
+        // AABB.contains uses exclusive upper bound, so add 1 to max values
+        buildZones.put(TeamSide.PLAYER1, new AABB(
                 p1MinX, y, p1MinZ,
                 p1MinX + zoneSize, y + zoneHeight, p1MinZ + zoneSize));
 
@@ -225,7 +225,7 @@ public class ArenaManager {
         int p2MaxZ = p2BaseZ + 5;
         int p2MinX = maxX - zoneSize + 1;
         int p2MinZ = p2MaxZ - zoneSize + 1;
-        buildZones.put(TeamSide.PLAYER2, new Box(
+        buildZones.put(TeamSide.PLAYER2, new AABB(
                 p2MinX, y, p2MinZ,
                 p2MinX + zoneSize, y + zoneHeight, p2MinZ + zoneSize));
     }
@@ -316,7 +316,7 @@ public class ArenaManager {
         if (arenaWorld == null) return;
         for (var entry : bellPositions.entrySet()) {
             BlockPos bellPos = entry.getValue();
-            arenaWorld.setBlockState(bellPos, Blocks.BELL.getDefaultState());
+            arenaWorld.setBlockAndUpdate(bellPos, Blocks.BELL.defaultBlockState());
         }
     }
 
@@ -338,7 +338,7 @@ public class ArenaManager {
      * Check if a position is within a team's build zone.
      */
     public boolean isInBuildZone(TeamSide team, BlockPos pos) {
-        Box zone = buildZones.get(team);
+        AABB zone = buildZones.get(team);
         if (zone == null) return false;
         return zone.contains(pos.getX(), pos.getY(), pos.getZ());
     }
@@ -430,7 +430,7 @@ public class ArenaManager {
         for (int x = cx - arenaHalfWidth; x <= cx + arenaHalfWidth; x++) {
             BlockPos pos = new BlockPos(x, y, cz);
             if (!arenaWorld.getBlockState(pos).isAir()) {
-                arenaWorld.setBlockState(pos, Blocks.AIR.getDefaultState());
+                arenaWorld.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
             }
         }
     }
@@ -447,7 +447,7 @@ public class ArenaManager {
         int arenaHalfWidth = sep + cfg.laneWidth + 10;
 
         for (int x = cx - arenaHalfWidth; x <= cx + arenaHalfWidth; x++) {
-            arenaWorld.setBlockState(new BlockPos(x, y, cz), Blocks.TINTED_GLASS.getDefaultState());
+            arenaWorld.setBlockAndUpdate(new BlockPos(x, y, cz), Blocks.TINTED_GLASS.defaultBlockState());
         }
     }
 
@@ -512,7 +512,7 @@ public class ArenaManager {
         // Tick floating damage numbers
         ArenaMob.tickDamageNumbers(arenaWorld);
 
-        // Cleanup stray projectiles (arrows stuck in ground, old fireballs, etc.)
+        // Tick stray projectile cleanup
         ArenaMob.tickProjectileCleanup(arenaWorld);
     }
 
@@ -574,11 +574,11 @@ public class ArenaManager {
             }
             // Clean up floating damage numbers, HP bars, arrows, projectiles
             List<Entity> toRemove = new ArrayList<>();
-            for (Entity e : arenaWorld.iterateEntities()) {
-                if (e.getCommandTags().contains("arenaclash_dmg_number")
-                        || e.getCommandTags().contains("arenaclash_tower_arrow")
-                        || e.getCommandTags().contains("arenaclash_mob_hp")
-                        || e.getCommandTags().contains("arenaclash_mob_projectile")) {
+            for (Entity e : arenaWorld.getAllEntities()) {
+                if (e.getTags().contains("arenaclash_dmg_number")
+                        || e.getTags().contains("arenaclash_tower_arrow")
+                        || e.getTags().contains("arenaclash_mob_hp")
+                        || e.getTags().contains("arenaclash_mob_projectile")) {
                     toRemove.add(e);
                 }
             }

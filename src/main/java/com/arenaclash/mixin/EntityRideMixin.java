@@ -1,6 +1,6 @@
 package com.arenaclash.mixin;
 
-import net.minecraft.entity.Entity;
+import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,31 +18,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(Entity.class)
 public class EntityRideMixin {
 
-    @Inject(method = "startRiding(Lnet/minecraft/entity/Entity;Z)Z", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "startRiding(Lnet/minecraft/world/entity/Entity;Z)Z", at = @At("HEAD"), cancellable = true)
     private void arenaclash$preventArenaMobRiding(Entity vehicle, boolean force, CallbackInfoReturnable<Boolean> cir) {
         Entity self = (Entity) (Object) this;
 
         // Arena mobs cannot ride anything
-        if (self.getCommandTags().contains("arenaclash_mob")) {
+        if (self.getTags().contains("arenaclash_mob")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Spawner-tagged mobs cannot ride anything (prevents them getting stuck in boats)
-        if (self.getCommandTags().contains("arenaclash_spawner_mob")) {
+        if (self.getTags().contains("arenaclash_spawner_mob")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Nothing can ride arena-tagged vehicles either
-        if (vehicle.getCommandTags().contains("arenaclash_mob")
-                || vehicle.getCommandTags().contains("arenaclash_structure")) {
+        if (vehicle.getTags().contains("arenaclash_mob")
+                || vehicle.getTags().contains("arenaclash_structure")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Prevent arena mobs from becoming vehicles (e.g. spider jockeys, chicken jockeys)
-        if (vehicle.getCommandTags().contains("arenaclash_spawner_mob")) {
+        if (vehicle.getTags().contains("arenaclash_spawner_mob")) {
             cir.setReturnValue(false);
         }
     }

@@ -1,9 +1,9 @@
 package com.arenaclash.mixin;
 
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.projectile.ProjectileEntity;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,14 +17,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * projectile-to-target proximity each tick and applies damage when close enough.
  * Vanilla collision must be suppressed because:
  * <ul>
- *   <li><b>Arrows</b> ({@code PersistentProjectileEntity}): vanilla {@code onEntityHit}
- *       calls {@code entity.damage()} → our {@code ArenaMobDamageMixin} returns false →
- *       BUT vanilla treats {@code damage() == false} the same as invulnerable and
+ *   <li><b>Arrows</b> ({@code AbstractArrow}): vanilla {@code onHitEntity}
+ *       calls {@code entity.hurt()} → our {@code ArenaMobDamageMixin} returns false →
+ *       BUT vanilla treats {@code hurt() == false} the same as invulnerable and
  *       <em>deflects the arrow</em> (reverses velocity). The arrow bounces away and
  *       {@code ProjectileTracker} never registers a hit.</li>
- *   <li><b>Explosive projectiles</b> ({@code FireballEntity}, {@code WitherSkullEntity}):
- *       subclasses call {@code super.onCollision()} then {@code this.discard()}.
- *       Our HEAD inject on {@code ProjectileEntity.onCollision} cancels the super,
+ *   <li><b>Explosive projectiles</b> ({@code LargeFireball}, {@code WitherSkull}):
+ *       subclasses call {@code super.onHit()} then {@code this.discard()}.
+ *       Our HEAD inject on {@code Projectile.onHit} cancels the super,
  *       but the subclass code continues and discards the entity. For these types,
  *       {@code ProjectileTracker} relies on its large hitRadius (3.0 blocks) to catch
  *       the projectile 1-2 ticks before vanilla collision fires — same behavior as before.</li>
@@ -33,22 +33,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <h3>Interception strategy</h3>
  * Two injection points for defense in depth:
  * <ol>
- *   <li>{@code onCollision(HitResult)} — main entry point called from {@code tick()}.
- *       Cancels before entity hits are dispatched to {@code onEntityHit}.</li>
- *   <li>{@code onEntityHit(EntityHitResult)} — belt-and-suspenders catch for subclasses
+ *   <li>{@code onHit(HitResult)} — main entry point called from {@code tick()}.
+ *       Cancels before entity hits are dispatched to {@code onHitEntity}.</li>
+ *   <li>{@code onHitEntity(EntityHitResult)} — belt-and-suspenders catch for subclasses
  *       that might invoke entity hit processing through a different path.</li>
  * </ol>
  *
  * Block collisions are NOT affected — projectiles still stop at walls and ground.
  */
-@Mixin(ProjectileEntity.class)
+@Mixin(Projectile.class)
 public class ProjectileCollisionMixin {
 
     /**
-     * Primary interception: cancel onCollision entirely for entity hits on arena entities.
-     * This prevents the dispatch to onEntityHit where arrow deflection lives.
+     * Primary interception: cancel onHit entirely for entity hits on arena entities.
+     * This prevents the dispatch to onHitEntity where arrow deflection lives.
      */
-    @Inject(method = "onCollision", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onHit", at = @At("HEAD"), cancellable = true)
     private void arenaclash$skipArenaEntityCollision(HitResult hitResult, CallbackInfo ci) {
         if (hitResult.getType() != HitResult.Type.ENTITY) return;
 
@@ -62,13 +62,13 @@ public class ProjectileCollisionMixin {
     }
 
     /**
-     * Secondary interception: cancel onEntityHit if it's somehow reached directly.
-     * This catches edge cases where a subclass calls onEntityHit without going
-     * through the standard onCollision dispatch, or where a subclass's onCollision
-     * override calls super.onCollision() and then processes the entity hit result
+     * Secondary interception: cancel onHitEntity if it's somehow reached directly.
+     * This catches edge cases where a subclass calls onHitEntity without going
+     * through the standard onHit dispatch, or where a subclass's onHit
+     * override calls super.onHit() and then processes the entity hit result
      * independently.
      */
-    @Inject(method = "onEntityHit", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onHitEntity", at = @At("HEAD"), cancellable = true)
     private void arenaclash$skipArenaEntityHit(EntityHitResult entityHitResult, CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
         if (!isArenaProjectile(self)) return;
@@ -79,14 +79,14 @@ public class ProjectileCollisionMixin {
     }
 
     private static boolean isArenaProjectile(Entity entity) {
-        return entity.getCommandTags().contains("arenaclash_mob_projectile")
-                || entity.getCommandTags().contains("arenaclash_tower_arrow");
+        return entity.getTags().contains("arenaclash_mob_projectile")
+                || entity.getTags().contains("arenaclash_tower_arrow");
     }
 
     private static boolean isArenaEntity(Entity entity) {
-        return entity.getCommandTags().contains("arenaclash_mob")
-                || entity.getCommandTags().contains("arenaclash_mob_hp")
-                || entity.getCommandTags().contains("arenaclash_dmg_number")
-                || entity.getCommandTags().contains("arenaclash_vex");
+        return entity.getTags().contains("arenaclash_mob")
+                || entity.getTags().contains("arenaclash_mob_hp")
+                || entity.getTags().contains("arenaclash_dmg_number")
+                || entity.getTags().contains("arenaclash_vex");
     }
 }

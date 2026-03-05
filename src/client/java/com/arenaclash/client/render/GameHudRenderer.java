@@ -1,11 +1,11 @@
 package com.arenaclash.client.render;
 
 import com.arenaclash.client.ArenaClashClient;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.resource.language.I18n;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.resources.language.I18n;
 
 /**
  * Renders polished game HUD overlay:
@@ -20,15 +20,15 @@ public class GameHudRenderer {
     private static long lastTickTime = 0;
     private static float animTimer = 0;
 
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
+    public static void render(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
         String phase = ArenaClashClient.currentPhase;
         if ("LOBBY".equals(phase)) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player == null) return;
 
-        int screenWidth = client.getWindow().getScaledWidth();
-        TextRenderer textRenderer = client.textRenderer;
+        int screenWidth = client.getWindow().getGuiScaledWidth();
+        Font textRenderer = client.font;
 
         // Animation timer
         long now = System.currentTimeMillis();
@@ -56,21 +56,21 @@ public class GameHudRenderer {
         // Gradient background
         int bgColor1 = getPhaseGradientStart(phase);
         int bgColor2 = getPhaseGradientEnd(phase);
-        drawGradientRect(ctx, barX, barY, barX + barWidth, barY + barHeight, bgColor1, bgColor2);
+        drawGradientRect(guiGraphics, barX, barY, barX + barWidth, barY + barHeight, bgColor1, bgColor2);
 
         // Border
         int borderColor = getPhaseAccent(phase);
-        ctx.fill(barX, barY, barX + barWidth, barY + 1, borderColor);
-        ctx.fill(barX, barY + barHeight - 1, barX + barWidth, barY + barHeight, borderColor);
-        ctx.fill(barX, barY, barX + 1, barY + barHeight, borderColor);
-        ctx.fill(barX + barWidth - 1, barY, barX + barWidth, barY + barHeight, borderColor);
+        guiGraphics.fill(barX, barY, barX + barWidth, barY + 1, borderColor);
+        guiGraphics.fill(barX, barY + barHeight - 1, barX + barWidth, barY + barHeight, borderColor);
+        guiGraphics.fill(barX, barY, barX + 1, barY + barHeight, borderColor);
+        guiGraphics.fill(barX + barWidth - 1, barY, barX + barWidth, barY + barHeight, borderColor);
 
         // Phase icon + name
         String phaseIcon = getPhaseIcon(phase);
         String phaseName = getPhaseName(phase);
         String phaseText = phaseIcon + " " + phaseName;
         int phaseColor = getPhaseTextColor(phase);
-        ctx.drawCenteredTextWithShadow(textRenderer, phaseText, screenWidth / 2, barY + 4, phaseColor);
+        guiGraphics.drawCenteredString(textRenderer, phaseText, screenWidth / 2, barY + 4, phaseColor);
 
         // Timer display
         boolean showTimer = shouldShowTimer(phase, timerTicks);
@@ -84,7 +84,7 @@ public class GameHudRenderer {
                 timerColor = (timerColor & 0x00FFFFFF) | (alpha << 24);
             }
 
-            ctx.drawCenteredTextWithShadow(textRenderer, timerStr, screenWidth / 2, barY + 17, timerColor);
+            guiGraphics.drawCenteredString(textRenderer, timerStr, screenWidth / 2, barY + 17, timerColor);
         } else if ("BATTLE".equals(phase)) {
             // Show "LIVE" indicator with pulsing dot
             float pulse = (float) (Math.sin(animTimer * 3) * 0.5 + 0.5);
@@ -92,58 +92,58 @@ public class GameHudRenderer {
             int dotColor = (dotAlpha << 24) | 0xFF3333;
             int dotX = screenWidth / 2 - 20;
             int dotY = barY + 19;
-            ctx.fill(dotX, dotY, dotX + 4, dotY + 4, dotColor);
-            ctx.drawTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.live"), dotX + 7, dotY - 1, 0xFFFF4444);
+            guiGraphics.fill(dotX, dotY, dotX + 4, dotY + 4, dotColor);
+            guiGraphics.drawString(textRenderer, I18n.get("arenaclash.hud.live"), dotX + 7, dotY - 1, 0xFFFF4444);
         }
 
         // Round indicator (left side of bar)
-        drawRoundIndicator(ctx, textRenderer, barX + 6, barY + 4, round, phase);
+        drawRoundIndicator(guiGraphics, textRenderer, barX + 6, barY + 4, round, phase);
 
         // =============================================
         // HINT BAR (below main bar)
         // =============================================
         String hint = getPhaseHint(phase);
         if (hint != null) {
-            int hintWidth = textRenderer.getWidth(hint) + 16;
+            int hintWidth = textRenderer.width(hint) + 16;
             int hintX = screenWidth / 2 - hintWidth / 2;
             int hintY = barY + barHeight + 2;
 
-            ctx.fill(hintX, hintY, hintX + hintWidth, hintY + 12, 0x80000000);
-            ctx.drawCenteredTextWithShadow(textRenderer, hint, screenWidth / 2, hintY + 2, 0xBBBBBB);
+            guiGraphics.fill(hintX, hintY, hintX + hintWidth, hintY + 12, 0x80000000);
+            guiGraphics.drawCenteredString(textRenderer, hint, screenWidth / 2, hintY + 2, 0xBBBBBB);
         }
 
         // =============================================
         // BELL STATUS (during PREPARATION)
         // =============================================
         if ("PREPARATION".equals(phase)) {
-            String bellHint = I18n.translate("arenaclash.hud.bell_hint");
+            String bellHint = I18n.get("arenaclash.hud.bell_hint");
             int bellY = barY + barHeight + 16;
             float bellPulse = (float) (Math.sin(animTimer * 2) * 0.3 + 0.7);
             int bellAlpha = (int) (bellPulse * 255);
-            ctx.drawCenteredTextWithShadow(textRenderer, bellHint, screenWidth / 2, bellY,
+            guiGraphics.drawCenteredString(textRenderer, bellHint, screenWidth / 2, bellY,
                     (bellAlpha << 24) | 0xFFFF55);
         }
 
         // =============================================
-        // GAME OVER OVERLAY 
+        // GAME OVER OVERLAY
         // =============================================
         if ("GAME_OVER".equals(phase)) {
-            int screenHeight = client.getWindow().getScaledHeight();
+            int screenHeight = client.getWindow().getGuiScaledHeight();
 
             // Big semi-transparent overlay
-            ctx.fill(0, screenHeight / 2 - 40, screenWidth, screenHeight / 2 + 40, 0xCC000000);
+            guiGraphics.fill(0, screenHeight / 2 - 40, screenWidth, screenHeight / 2 + 40, 0xCC000000);
 
             // Animated glow
             float pulse = (float) (Math.sin(animTimer * 2) * 0.3 + 0.7);
             int glowAlpha = (int) (pulse * 255);
 
-            ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.game_over.title"),
+            guiGraphics.drawCenteredString(textRenderer, I18n.get("arenaclash.hud.game_over.title"),
                     screenWidth / 2, screenHeight / 2 - 20, (glowAlpha << 24) | 0xFFD700);
 
             // Timer showing when returning
             if (timerTicks > 0) {
                 int secs = Math.max(0, timerTicks / 20);
-                ctx.drawCenteredTextWithShadow(textRenderer, I18n.translate("arenaclash.hud.game_over.returning", String.valueOf(secs)),
+                guiGraphics.drawCenteredString(textRenderer, I18n.get("arenaclash.hud.game_over.returning", String.valueOf(secs)),
                         screenWidth / 2, screenHeight / 2 + 10, 0xAAAAAAA);
             }
         }
@@ -153,13 +153,13 @@ public class GameHudRenderer {
     // HELPER METHODS
     // =============================================
 
-    private static void drawGradientRect(DrawContext ctx, int x1, int y1, int x2, int y2,
+    private static void drawGradientRect(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2,
                                           int colorTop, int colorBottom) {
         int height = y2 - y1;
         for (int i = 0; i < height; i++) {
             float t = (float) i / height;
             int color = lerpColor(colorTop, colorBottom, t);
-            ctx.fill(x1, y1 + i, x2, y1 + i + 1, color);
+            guiGraphics.fill(x1, y1 + i, x2, y1 + i + 1, color);
         }
     }
 
@@ -173,7 +173,7 @@ public class GameHudRenderer {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    private static void drawRoundIndicator(DrawContext ctx, TextRenderer textRenderer,
+    private static void drawRoundIndicator(GuiGraphics guiGraphics, Font textRenderer,
                                             int x, int y, int round, String phase) {
         int maxRounds = 3;
         for (int i = 1; i <= maxRounds; i++) {
@@ -181,7 +181,7 @@ public class GameHudRenderer {
             if (i < round) pipColor = 0xFF55FF55;
             else if (i == round) pipColor = getPhaseTextColor(phase);
             else pipColor = 0xFF555555;
-            ctx.fill(x + (i - 1) * 8, y + 8, x + (i - 1) * 8 + 5, y + 13, pipColor);
+            guiGraphics.fill(x + (i - 1) * 8, y + 8, x + (i - 1) * 8 + 5, y + 13, pipColor);
         }
     }
 
@@ -215,11 +215,11 @@ public class GameHudRenderer {
 
     private static String getPhaseName(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> I18n.translate("arenaclash.hud.phase.survival");
-            case "PREPARATION" -> I18n.translate("arenaclash.hud.phase.preparation");
-            case "BATTLE" -> I18n.translate("arenaclash.hud.phase.battle");
-            case "ROUND_END" -> I18n.translate("arenaclash.hud.phase.round_end");
-            case "GAME_OVER" -> I18n.translate("arenaclash.hud.phase.game_over");
+            case "SURVIVAL" -> I18n.get("arenaclash.hud.phase.survival");
+            case "PREPARATION" -> I18n.get("arenaclash.hud.phase.preparation");
+            case "BATTLE" -> I18n.get("arenaclash.hud.phase.battle");
+            case "ROUND_END" -> I18n.get("arenaclash.hud.phase.round_end");
+            case "GAME_OVER" -> I18n.get("arenaclash.hud.phase.game_over");
             default -> phase;
         };
     }
@@ -270,10 +270,10 @@ public class GameHudRenderer {
 
     private static String getPhaseHint(String phase) {
         return switch (phase) {
-            case "SURVIVAL" -> I18n.translate("arenaclash.hud.hint.survival");
-            case "PREPARATION" -> I18n.translate("arenaclash.hud.hint.preparation");
-            case "BATTLE" -> I18n.translate("arenaclash.hud.hint.battle");
-            case "ROUND_END" -> I18n.translate("arenaclash.hud.hint.round_end");
+            case "SURVIVAL" -> I18n.get("arenaclash.hud.hint.survival");
+            case "PREPARATION" -> I18n.get("arenaclash.hud.hint.preparation");
+            case "BATTLE" -> I18n.get("arenaclash.hud.hint.battle");
+            case "ROUND_END" -> I18n.get("arenaclash.hud.hint.round_end");
             default -> null;
         };
     }

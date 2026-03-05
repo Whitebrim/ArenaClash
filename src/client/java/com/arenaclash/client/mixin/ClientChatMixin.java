@@ -2,7 +2,7 @@ package com.arenaclash.client.mixin;
 
 import com.arenaclash.client.ArenaClashClient;
 import com.arenaclash.client.tcp.ArenaClashTcpClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,10 +16,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * in ArenaClashClient, NOT here. Mixin-based command interception is unreliable
  * because the integrated server's command dispatcher processes commands locally.
  */
-@Mixin(ClientPlayNetworkHandler.class)
+@Mixin(ClientPacketListener.class)
 public class ClientChatMixin {
 
-    @Inject(method = "sendChatMessage", at = @At("HEAD"))
+    @Inject(method = "sendChat", at = @At("HEAD"))
     private void arenaclash$interceptChatSend(String message, CallbackInfo ci) {
         ArenaClashTcpClient tcp = ArenaClashClient.getTcpClient();
         if (tcp != null && tcp.isConnected()) {

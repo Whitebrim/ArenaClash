@@ -1,11 +1,11 @@
 package com.arenaclash.client.world;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.screen.world.CreateWorldScreen;
-import net.minecraft.client.gui.screen.world.WorldCreator;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.GameRules;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,9 +18,9 @@ import java.nio.file.Path;
  * for the Arena Clash game mode.
  *
  * Strategy:
- * - Round 1: Open CreateWorldScreen invisibly, configure via WorldCreator,
- *   then call the private createLevel() through an @Invoker accessor mixin.
- * - Round 2+: Reload the same world via IntegratedServerLoader.start()
+ * - Round 1: Open CreateWorldScreen invisibly, configure via WorldCreationUiState,
+ *   then call the private onCreate() through an access widener.
+ * - Round 2+: Reload the same world via WorldOpenFlows.openWorld()
  * - After world loads: apply game rules (Hard difficulty, keepInventory, etc.)
  */
 public class WorldCreationHelper {
@@ -67,7 +67,7 @@ public class WorldCreationHelper {
      *
      * No isNewGame flags, no round checks. gameSessionId is the single source of truth.
      */
-    public static void tickPending(MinecraftClient client) {
+    public static void tickPending(Minecraft client) {
         // ---- auto-submit state machine ----
         if (autoSubmitPending) {
             if (--autoSubmitTicksLeft <= 0) {
@@ -96,8 +96,8 @@ public class WorldCreationHelper {
         String expectedWorldName = WORLD_NAME_PREFIX + gsId;
 
         // Case 1: Already inside the correct ArenaClash world → stay
-        if (client.isInSingleplayer() && client.getServer() != null) {
-            String levelName = client.getServer().getSaveProperties().getLevelName();
+        if (client.hasSingleplayerServer() && client.getServer() != null) {
+            String levelName = client.getServer().getWorldData().getLevelName();
             if (expectedWorldName.equals(levelName)) {
                 LOGGER.info("Already in correct world '{}'", levelName);
                 currentWorldDirName = expectedWorldName;
@@ -108,7 +108,7 @@ public class WorldCreationHelper {
             if (levelName != null && levelName.startsWith(WORLD_NAME_PREFIX)) {
                 LOGGER.info("In wrong world '{}', need '{}' — disconnecting", levelName, expectedWorldName);
                 creationPending = true; // re-process next tick after disconnect
-                client.world.disconnect();
+                client.level.disconnect();
                 client.disconnect();
                 return;
             }
@@ -133,10 +133,10 @@ public class WorldCreationHelper {
     // WORLD CREATION  (uses CreateWorldScreen + @Invoker accessor)
     // ====================================================================
 
-    private static void beginWorldCreation(MinecraftClient client, String worldName, long seed) {
+    private static void beginWorldCreation(Minecraft client, String worldName, long seed) {
         // 1. Disconnect from whatever we're in now
-        if (client.world != null) {
-            client.world.disconnect();
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -149,7 +149,7 @@ public class WorldCreationHelper {
         // 3. Open CreateWorldScreen on the next frame (after disconnect settles)
         client.execute(() -> {
             try {
-                CreateWorldScreen.create(client, new TitleScreen());
+                CreateWorldScreen.openFresh(client, new TitleScreen());
             } catch (Exception e) {
                 LOGGER.error("Failed to open CreateWorldScreen", e);
                 autoSubmitPending = false;
@@ -159,30 +159,30 @@ public class WorldCreationHelper {
 
     /**
      * Called when autoSubmitTicksLeft reaches 0.
-     * By now, CreateWorldScreen.init() has run and WorldCreator is ready.
+     * By now, CreateWorldScreen.init() has run and WorldCreationUiState is ready.
      */
-    private static void doAutoSubmit(MinecraftClient client) {
-        if (!(client.currentScreen instanceof CreateWorldScreen createScreen)) {
+    private static void doAutoSubmit(Minecraft client) {
+        if (!(client.screen instanceof CreateWorldScreen createScreen)) {
             LOGGER.error("Expected CreateWorldScreen but got {} — aborting auto-create",
-                    client.currentScreen);
+                    client.screen);
             return;
         }
 
         try {
-            WorldCreator creator = createScreen.getWorldCreator();
+            var creator = createScreen.getUiState();
             if (creator == null) {
-                LOGGER.error("WorldCreator is null on CreateWorldScreen");
+                LOGGER.error("WorldCreationUiState is null on CreateWorldScreen");
                 return;
             }
 
             // Configure everything the player would normally set manually
-            creator.setWorldName(autoSubmitWorldName);
+            creator.setName(autoSubmitWorldName);
             creator.setSeed(String.valueOf(autoSubmitSeed));
-            creator.setGameMode(WorldCreator.Mode.SURVIVAL);
+            creator.setGameMode(new CreateWorldScreen.SelectedGameMode(GameType.SURVIVAL));
             creator.setDifficulty(Difficulty.HARD);
-            creator.setCheatsEnabled(true);     // needed for /gamerule
+            creator.setAllowCommands(true);     // needed for /gamerule
 
-            LOGGER.info("Configured WorldCreator: name={}, seed={}, SURVIVAL, HARD, cheats=on",
+            LOGGER.info("Configured WorldCreationUiState: name={}, seed={}, SURVIVAL, HARD, cheats=on",
                     autoSubmitWorldName, autoSubmitSeed);
 
             // Remember the dir name so we can reload in later rounds
@@ -190,8 +190,8 @@ public class WorldCreationHelper {
 
             // Trigger the full Mojang world-creation pipeline (datapacks, registries,
             // worldgen, level.dat, etc.) — method made accessible via arenaclash.accesswidener
-            createScreen.createLevel();
-            LOGGER.info("createLevel() invoked — world creation started");
+            createScreen.onCreate();
+            LOGGER.info("onCreate() invoked — world creation started");
 
         } catch (Exception e) {
             LOGGER.error("Failed to auto-submit CreateWorldScreen", e);
@@ -203,9 +203,9 @@ public class WorldCreationHelper {
     // WORLD RELOAD  (round 2+)
     // ====================================================================
 
-    private static void loadExistingWorld(MinecraftClient client, String dirName) {
-        if (client.world != null) {
-            client.world.disconnect();
+    private static void loadExistingWorld(Minecraft client, String dirName) {
+        if (client.level != null) {
+            client.level.disconnect();
         }
         client.disconnect();
 
@@ -213,7 +213,7 @@ public class WorldCreationHelper {
         client.execute(() -> {
             client.execute(() -> {                  // double-execute = 2-tick delay
                 try {
-                    client.createIntegratedServerLoader().start(dirName, () -> {
+                    client.createWorldOpenFlows().openWorld(dirName, () -> {
                         LOGGER.warn("World load cancelled: {}", dirName);
                         client.setScreen(new TitleScreen());
                     });
@@ -233,13 +233,13 @@ public class WorldCreationHelper {
      * Automatically apply game rules once when the integrated server finishes loading.
      * Called every tick; acts only once per world load.
      */
-    private static void applyGameRulesOnceIfNeeded(MinecraftClient client) {
+    private static void applyGameRulesOnceIfNeeded(Minecraft client) {
         if (gameRulesApplied) return;
-        if (!client.isInSingleplayer() || client.getServer() == null) return;
+        if (!client.hasSingleplayerServer() || client.getServer() == null) return;
         // Wait until the server is actually running
         if (!client.getServer().isRunning()) return;
 
-        String levelName = client.getServer().getSaveProperties().getLevelName();
+        String levelName = client.getServer().getWorldData().getLevelName();
         if (levelName != null && levelName.startsWith(WORLD_NAME_PREFIX)) {
             applyGameRules(client);
             gameRulesApplied = true;
@@ -247,8 +247,8 @@ public class WorldCreationHelper {
     }
 
     /** Force-apply all ArenaClash game rules right now. */
-    public static void applyGameRules(MinecraftClient client) {
-        if (!client.isInSingleplayer() || client.getServer() == null) return;
+    public static void applyGameRules(Minecraft client) {
+        if (!client.hasSingleplayerServer() || client.getServer() == null) return;
 
         var server = client.getServer();
         server.execute(() -> {
@@ -256,8 +256,8 @@ public class WorldCreationHelper {
                 server.setDifficulty(Difficulty.HARD, true);
 
                 var gr = server.getGameRules();
-                gr.get(GameRules.DO_DAYLIGHT_CYCLE).set(true, server);
-                gr.get(GameRules.KEEP_INVENTORY).set(true, server);
+                gr.get(GameRules.RULE_DAYLIGHT).set(true, server);
+                gr.get(GameRules.RULE_KEEPINVENTORY).set(true, server);
 
                 LOGGER.info("Applied game rules — HARD, keepInventory, daylightCycle");
             } catch (Exception e) {
@@ -291,8 +291,8 @@ public class WorldCreationHelper {
      */
     private static boolean worldExistsOnDisk(String dirName) {
         if (dirName == null) return false;
-        MinecraftClient client = MinecraftClient.getInstance();
-        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        Minecraft client = Minecraft.getInstance();
+        Path savesDir = client.getLevelSource().getBaseDir();
         Path worldDir = savesDir.resolve(dirName);
         return Files.exists(worldDir) && Files.isDirectory(worldDir);
     }
@@ -301,8 +301,8 @@ public class WorldCreationHelper {
      * Scan the saves directory for an existing ArenaClash_* world.
      * Returns the directory name of the most recently modified one, or null if none found.
      */
-    private static String findExistingArenaClashWorld(MinecraftClient client) {
-        Path savesDir = client.getLevelStorage().getSavesDirectory();
+    private static String findExistingArenaClashWorld(Minecraft client) {
+        Path savesDir = client.getLevelSource().getBaseDir();
         try {
             if (!Files.exists(savesDir)) return null;
             try (var dirs = Files.list(savesDir)) {
@@ -324,8 +324,8 @@ public class WorldCreationHelper {
     /** Delete a specific world by directory name. */
     public static void deleteWorld(String worldDirName) {
         if (worldDirName == null || worldDirName.isEmpty()) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        Minecraft client = Minecraft.getInstance();
+        Path savesDir = client.getLevelSource().getBaseDir();
         Path worldDir = savesDir.resolve(worldDirName);
         if (Files.exists(worldDir) && Files.isDirectory(worldDir)) {
             try {
@@ -339,8 +339,8 @@ public class WorldCreationHelper {
 
     /** Delete every ArenaClash_* save from disk. */
     public static void cleanupOldWorlds() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        Path savesDir = client.getLevelStorage().getSavesDirectory();
+        Minecraft client = Minecraft.getInstance();
+        Path savesDir = client.getLevelSource().getBaseDir();
         try {
             if (!Files.exists(savesDir)) return;
             try (var dirs = Files.list(savesDir)) {

@@ -1,7 +1,7 @@
 package com.arenaclash.client.mixin;
 
 import com.arenaclash.client.ArenaClashClient;
-import net.minecraft.client.gui.hud.PlayerListHud;
+import net.minecraft.client.gui.components.PlayerTabOverlay;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
  * Suppress the vanilla Tab player list overlay when an ArenaClash game is active.
  * Tab is rebound to open the card/deployment GUI instead.
  */
-@Mixin(PlayerListHud.class)
+@Mixin(PlayerTabOverlay.class)
 public class PlayerListMixin {
 
     @ModifyVariable(method = "setVisible", at = @At("HEAD"), argsOnly = true, ordinal = 0)

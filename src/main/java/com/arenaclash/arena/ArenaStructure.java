@@ -2,23 +2,24 @@ package com.arenaclash.arena;
 
 import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.TeamSide;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.projectile.ArrowEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.particle.DustParticleEffect;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 
@@ -33,14 +34,14 @@ public class ArenaStructure {
     private final StructureType type;
     private final TeamSide owner;
     private final BlockPos position;
-    private final Box boundingBox;
+    private final AABB boundingBox;
     private double maxHP;
     private double currentHP;
     private UUID markerEntityId;
     private Lane.LaneId associatedLane;
     private int attackCooldownRemaining = 0;
 
-    public ArenaStructure(StructureType type, TeamSide owner, BlockPos position, Box boundingBox) {
+    public ArenaStructure(StructureType type, TeamSide owner, BlockPos position, AABB boundingBox) {
         this.type = type;
         this.owner = owner;
         this.position = position;
@@ -53,16 +54,16 @@ public class ArenaStructure {
     public StructureType getType() { return type; }
     public TeamSide getOwner() { return owner; }
     public BlockPos getPosition() { return position; }
-    public Box getBoundingBox() { return boundingBox; }
+    public AABB getBoundingBox() { return boundingBox; }
     public double getMaxHP() { return maxHP; }
     public double getCurrentHP() { return currentHP; }
     public boolean isDestroyed() { return currentHP <= 0; }
     public Lane.LaneId getAssociatedLane() { return associatedLane; }
     public void setAssociatedLane(Lane.LaneId lane) { this.associatedLane = lane; }
 
-    public void spawnMarker(ServerWorld world) {
+    public void spawnMarker(ServerLevel world) {
         removeMarker(world);
-        ArmorStandEntity marker = new ArmorStandEntity(world,
+        ArmorStand marker = new ArmorStand(world,
                 position.getX() + 0.5, position.getY() + 6.0, position.getZ() + 0.5);
         marker.setInvisible(true);
         marker.setInvulnerable(true);
@@ -70,15 +71,15 @@ public class ArenaStructure {
         marker.setCustomNameVisible(true);
         marker.setSilent(true);
         marker.setSmall(true);
-        marker.addCommandTag("arenaclash_structure");
-        marker.addCommandTag("arenaclash_marker");
-        marker.addCommandTag("struct_" + owner.name() + "_" + type.name());
-        world.spawnEntity(marker);
-        this.markerEntityId = marker.getUuid();
+        marker.addTag("arenaclash_structure");
+        marker.addTag("arenaclash_marker");
+        marker.addTag("struct_" + owner.name() + "_" + type.name());
+        world.addFreshEntity(marker);
+        this.markerEntityId = marker.getUUID();
         updateMarkerName(world);
     }
 
-    public void removeMarker(ServerWorld world) {
+    public void removeMarker(ServerLevel world) {
         if (markerEntityId != null) {
             Entity e = world.getEntity(markerEntityId);
             if (e != null) e.discard();
@@ -86,7 +87,7 @@ public class ArenaStructure {
         }
     }
 
-    public boolean damage(double amount, ServerWorld world) {
+    public boolean damage(double amount, ServerLevel world) {
         this.currentHP = Math.max(0, currentHP - amount);
         updateMarkerName(world);
         if (currentHP <= 0) {
@@ -100,7 +101,7 @@ public class ArenaStructure {
     /**
      * Tick structure - towers shoot tracked arrows, throne does AoE shockwave.
      */
-    public void tick(ServerWorld world, List<ArenaMob> enemyMobs, ProjectileTracker projectileTracker) {
+    public void tick(ServerLevel world, List<ArenaMob> enemyMobs, ProjectileTracker projectileTracker) {
         if (isDestroyed()) return;
         if (attackCooldownRemaining > 0) { attackCooldownRemaining--; return; }
 
@@ -121,7 +122,7 @@ public class ArenaStructure {
             // Towers only attack mobs on their lane or center lane
             if (type == StructureType.TOWER && !coversLane(mob.getLane())) continue;
 
-            double dist = e.getBlockPos().getSquaredDistance(position);
+            double dist = e.blockPosition().distSqr(position);
             if (dist <= range * range) {
                 inRange.add(mob);
                 if (dist < closestDist) { closestDist = dist; closest = mob; }
@@ -142,82 +143,82 @@ public class ArenaStructure {
      * Tower shoots a real Arrow entity at the target mob.
      * Damage is now applied when the arrow reaches the target via ProjectileTracker.
      */
-    private void shootArrowAtTarget(ServerWorld world, ArenaMob target, double damage, ProjectileTracker projectileTracker) {
+    private void shootArrowAtTarget(ServerLevel world, ArenaMob target, double damage, ProjectileTracker projectileTracker) {
         Entity targetEntity = target.getEntity(world);
         if (targetEntity == null) return;
 
-        Vec3d shootFrom = new Vec3d(position.getX() + 0.5, position.getY() + 8.0, position.getZ() + 0.5);
-        Vec3d shootTo = targetEntity.getPos().add(0, targetEntity.getHeight() * 0.6, 0);
-        Vec3d direction = shootTo.subtract(shootFrom).normalize();
+        Vec3 shootFrom = new Vec3(position.getX() + 0.5, position.getY() + 8.0, position.getZ() + 0.5);
+        Vec3 shootTo = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.6, 0);
+        Vec3 direction = shootTo.subtract(shootFrom).normalize();
 
-        ArrowEntity arrow = new ArrowEntity(world, shootFrom.x, shootFrom.y, shootFrom.z,
+        Arrow arrow = new Arrow(world, shootFrom.x, shootFrom.y, shootFrom.z,
                 new ItemStack(Items.ARROW), null);
-        arrow.setVelocity(direction.x, direction.y + 0.1, direction.z, 2.0f, 1.0f);
-        arrow.setDamage(0); // No vanilla damage, we handle it ourselves
-        arrow.pickupType = ArrowEntity.PickupPermission.DISALLOWED;
-        arrow.setCritical(true);
-        arrow.addCommandTag("arenaclash_tower_arrow");
-        world.spawnEntity(arrow);
+        arrow.shoot(direction.x, direction.y + 0.1, direction.z, 2.0f, 1.0f);
+        arrow.setBaseDamage(0); // No vanilla damage, we handle it ourselves
+        arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
+        arrow.setCritArrow(true);
+        arrow.addTag("arenaclash_tower_arrow");
+        world.addFreshEntity(arrow);
 
         // Register with tracker — damage applied when arrow reaches target
-        projectileTracker.trackTowerArrow(arrow.getUuid(), owner, target, damage);
+        projectileTracker.trackTowerArrow(arrow.getUUID(), owner, target, damage);
 
         // Muzzle flash particles
-        world.spawnParticles(ParticleTypes.FLAME, shootFrom.x, shootFrom.y, shootFrom.z, 3, 0.1, 0.1, 0.1, 0.02);
+        world.sendParticles(ParticleTypes.FLAME, shootFrom.x, shootFrom.y, shootFrom.z, 3, 0.1, 0.1, 0.1, 0.02);
 
         world.playSound(null, position.getX(), position.getY() + 8, position.getZ(),
-                SoundEvents.ENTITY_ARROW_SHOOT, SoundCategory.HOSTILE, 1.0f, 1.2f);
+                SoundEvents.ARROW_SHOOT, SoundSource.HOSTILE, 1.0f, 1.2f);
     }
 
     /**
      * Throne does an AoE shockwave attack with expanding particle ring.
      */
-    private void performThroneAoE(ServerWorld world, List<ArenaMob> targets, double damage) {
-        Vec3d center = new Vec3d(position.getX() + 0.5, position.getY() + 1.0, position.getZ() + 0.5);
+    private void performThroneAoE(ServerLevel world, List<ArenaMob> targets, double damage) {
+        Vec3 center = new Vec3(position.getX() + 0.5, position.getY() + 1.0, position.getZ() + 0.5);
 
         for (ArenaMob mob : targets) {
             mob.takeDamage(damage, world);
             Entity e = mob.getEntity(world);
             if (e != null) {
-                Vec3d dir = e.getPos().subtract(center).normalize();
+                Vec3 dir = e.position().subtract(center).normalize();
                 double kb = 0.6;
-                e.requestTeleport(e.getX() + dir.x * kb, e.getY(), e.getZ() + dir.z * kb);
+                e.teleportTo(e.getX() + dir.x * kb, e.getY(), e.getZ() + dir.z * kb);
                 // Show visual damage feedback
                 if (e instanceof LivingEntity living) {
                     living.hurtTime = 10;
-                    living.maxHurtTime = 10;
+                    living.hurtDuration = 10;
                 }
                 // Spawn floating damage number
-                ArenaMob.spawnDamageNumber(world, e.getPos().add(0, e.getHeight() + 0.3, 0), damage);
+                ArenaMob.spawnDamageNumber(world, e.position().add(0, e.getBbHeight() + 0.3, 0), damage);
             }
         }
 
         // Shockwave particle ring (team colored)
         GameConfig cfg = GameConfig.get();
         double radius = cfg.throneAoeRange;
-        DustParticleEffect dust = owner == TeamSide.PLAYER1
-                ? new DustParticleEffect(new org.joml.Vector3f(0.2f, 0.5f, 1.0f), 1.5f)
-                : new DustParticleEffect(new org.joml.Vector3f(1.0f, 0.2f, 0.2f), 1.5f);
+        DustParticleOptions dust = owner == TeamSide.PLAYER1
+                ? new DustParticleOptions(new org.joml.Vector3f(0.2f, 0.5f, 1.0f), 1.5f)
+                : new DustParticleOptions(new org.joml.Vector3f(1.0f, 0.2f, 0.2f), 1.5f);
 
         for (int i = 0; i < 32; i++) {
             double angle = (Math.PI * 2) * i / 32;
             double px = center.x + Math.cos(angle) * radius * 0.7;
             double pz = center.z + Math.sin(angle) * radius * 0.7;
-            world.spawnParticles(dust, px, center.y + 0.5, pz, 1, 0, 0, 0, 0);
+            world.sendParticles(dust, px, center.y + 0.5, pz, 1, 0, 0, 0, 0);
         }
-        world.spawnParticles(ParticleTypes.EXPLOSION, center.x, center.y + 0.5, center.z, 3, 0.5, 0.3, 0.5, 0.02);
+        world.sendParticles(ParticleTypes.EXPLOSION, center.x, center.y + 0.5, center.z, 3, 0.5, 0.3, 0.5, 0.02);
         world.playSound(null, position.getX(), position.getY(), position.getZ(),
-                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.HOSTILE, 0.7f, 1.4f);
+                SoundEvents.GENERIC_EXPLODE, SoundSource.HOSTILE, 0.7f, 1.4f);
     }
 
-    private void onDestroy(ServerWorld world) {
+    private void onDestroy(ServerLevel world) {
         destroyAllBlocks(world);
         removeMarker(world);
-        Vec3d center = Vec3d.ofCenter(position).add(0, 2, 0);
-        world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1, 0, 0, 0, 0);
-        world.spawnParticles(ParticleTypes.CLOUD, center.x, center.y, center.z, 20, 1, 1, 1, 0.1);
+        Vec3 center = Vec3.atCenterOf(position).add(0, 2, 0);
+        world.sendParticles(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1, 0, 0, 0, 0);
+        world.sendParticles(ParticleTypes.CLOUD, center.x, center.y, center.z, 20, 1, 1, 1, 0.1);
         world.playSound(null, position.getX(), position.getY(), position.getZ(),
-                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.BLOCKS, 2.0f, 0.5f);
+                SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS, 2.0f, 0.5f);
     }
 
     public boolean coversLane(Lane.LaneId laneId) {
@@ -229,13 +230,13 @@ public class ArenaStructure {
     /**
      * Update HP display marker with colored bar.
      */
-    public void updateMarkerName(ServerWorld world) {
+    public void updateMarkerName(ServerLevel world) {
         if (isDestroyed()) return;
         Entity entity = markerEntityId != null ? world.getEntity(markerEntityId) : null;
 
         if (entity == null || !entity.isAlive()) {
             // Re-spawn marker if it was despawned
-            ArmorStandEntity marker = new ArmorStandEntity(world,
+            ArmorStand marker = new ArmorStand(world,
                     position.getX() + 0.5, position.getY() + 6.0, position.getZ() + 0.5);
             marker.setInvisible(true);
             marker.setInvulnerable(true);
@@ -243,10 +244,10 @@ public class ArenaStructure {
             marker.setCustomNameVisible(true);
             marker.setSilent(true);
             marker.setSmall(true);
-            marker.addCommandTag("arenaclash_structure");
-            marker.addCommandTag("arenaclash_marker");
-            world.spawnEntity(marker);
-            this.markerEntityId = marker.getUuid();
+            marker.addTag("arenaclash_structure");
+            marker.addTag("arenaclash_marker");
+            world.addFreshEntity(marker);
+            this.markerEntityId = marker.getUUID();
             entity = marker;
         }
 
@@ -263,13 +264,13 @@ public class ArenaStructure {
             bar.append(i < filled ? hpColor + "\u258B" : "\u00A78\u258B");
         }
 
-        Text typeName = Text.translatable(type == StructureType.THRONE ? "arenaclash.structure.throne" : "arenaclash.structure.tower");
-        MutableText displayName = Text.literal(teamColor + label + " ").append(typeName).append(Text.literal(" " + bar + " " + hpColor + hp + "\u00A77/" + max));
+        Component typeName = Component.translatable(type == StructureType.THRONE ? "arenaclash.structure.throne" : "arenaclash.structure.tower");
+        MutableComponent displayName = Component.literal(teamColor + label + " ").append(typeName).append(Component.literal(" " + bar + " " + hpColor + hp + "\u00A77/" + max));
         entity.setCustomName(displayName);
         entity.setCustomNameVisible(true);
     }
 
-    private void degradeBlocks(ServerWorld world, double chance) {
+    private void degradeBlocks(ServerLevel world, double chance) {
         var rand = world.getRandom();
         int minX = (int) boundingBox.minX, minY = (int) boundingBox.minY, minZ = (int) boundingBox.minZ;
         int maxX = (int) boundingBox.maxX, maxY = (int) boundingBox.maxY, maxZ = (int) boundingBox.maxZ;
@@ -278,16 +279,16 @@ public class ArenaStructure {
                 for (int z = minZ; z <= maxZ; z++) {
                     BlockPos pos = new BlockPos(x, y, z);
                     if (!world.getBlockState(pos).isAir() && rand.nextFloat() < chance)
-                        world.breakBlock(pos, false);
+                        world.destroyBlock(pos, false);
                 }
     }
 
-    private void destroyAllBlocks(ServerWorld world) {
+    private void destroyAllBlocks(ServerLevel world) {
         int minX = (int) boundingBox.minX, minY = (int) boundingBox.minY, minZ = (int) boundingBox.minZ;
         int maxX = (int) boundingBox.maxX, maxY = (int) boundingBox.maxY, maxZ = (int) boundingBox.maxZ;
         for (int x = minX; x <= maxX; x++)
             for (int y = minY; y <= maxY; y++)
                 for (int z = minZ; z <= maxZ; z++)
-                    world.breakBlock(new BlockPos(x, y, z), false);
+                    world.destroyBlock(new BlockPos(x, y, z), false);
     }
 }

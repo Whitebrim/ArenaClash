@@ -1,15 +1,15 @@
 package com.arenaclash.client.survival;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,8 +52,8 @@ public class OpponentMarkerManager {
      */
     private static final double NAMETAG_Y_OFFSET = 2.0;
 
-    private static ArmorStandEntity bodyEntity = null;
-    private static ArmorStandEntity nametagEntity = null;
+    private static ArmorStand bodyEntity = null;
+    private static ArmorStand nametagEntity = null;
     private static String opponentName = null;
 
     // --- Target state (written from TCP thread, read from tick thread) ---
@@ -103,8 +103,8 @@ public class OpponentMarkerManager {
      * Schedules entity creation/updates on the integrated server thread.
      */
     public static void tick() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null || client.player == null || !hasTarget) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null || client.player == null || !hasTarget) {
             return;
         }
 
@@ -116,7 +116,7 @@ public class OpponentMarkerManager {
         }
 
         // Dimension check - hide marker if opponent is in a different dimension
-        String localDim = client.world.getRegistryKey().getValue().toString();
+        String localDim = client.level.dimension().location().toString();
         String opDim = targetDimension;
         if (opDim != null && !opDim.equals(localDim)) {
             removeEntities();
@@ -124,7 +124,7 @@ public class OpponentMarkerManager {
         }
 
         // We need the integrated server to spawn/update entities
-        var server = client.getServer();
+        var server = client.getSingleplayerServer();
         if (server == null || !server.isRunning()) return;
 
         // Capture state for server thread
@@ -134,7 +134,7 @@ public class OpponentMarkerManager {
         pendingEquipment = null; // consume
 
         server.execute(() -> {
-            ServerWorld world = server.getOverworld();
+            ServerLevel world = server.overworld();
             if (world == null) return;
 
             // Create entities if missing
@@ -157,16 +157,16 @@ public class OpponentMarkerManager {
             currentYaw += yawDiff * LERP_SPEED;
 
             // Update body stand (at opponent's actual position)
-            bodyEntity.setPosition(currentX, currentY, currentZ);
-            bodyEntity.setYaw(currentYaw);
-            bodyEntity.setHeadYaw(currentYaw);
-            bodyEntity.setBodyYaw(currentYaw);
+            bodyEntity.setPos(currentX, currentY, currentZ);
+            bodyEntity.setYRot(currentYaw);
+            bodyEntity.setYHeadRot(currentYaw);
+            bodyEntity.yBodyRot = currentYaw;
 
             // Update nametag stand (offset above body)
-            nametagEntity.setPosition(currentX, currentY + NAMETAG_Y_OFFSET, currentZ);
-            nametagEntity.setYaw(currentYaw);
-            nametagEntity.setHeadYaw(currentYaw);
-            nametagEntity.setBodyYaw(currentYaw);
+            nametagEntity.setPos(currentX, currentY + NAMETAG_Y_OFFSET, currentZ);
+            nametagEntity.setYRot(currentYaw);
+            nametagEntity.setYHeadRot(currentYaw);
+            nametagEntity.yBodyRot = currentYaw;
 
             // Apply equipment to body stand only
             if (eqSnbt != null) {
@@ -192,18 +192,18 @@ public class OpponentMarkerManager {
     // =====================================================================
 
     private static void removeEntities() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        var server = client.getServer();
+        Minecraft client = Minecraft.getInstance();
+        var server = client.getSingleplayerServer();
 
         if (bodyEntity != null) {
-            ArmorStandEntity entity = bodyEntity;
+            ArmorStand entity = bodyEntity;
             bodyEntity = null;
             if (server != null && server.isRunning()) {
                 server.execute(entity::discard);
             }
         }
         if (nametagEntity != null) {
-            ArmorStandEntity entity = nametagEntity;
+            ArmorStand entity = nametagEntity;
             nametagEntity = null;
             if (server != null && server.isRunning()) {
                 server.execute(entity::discard);
@@ -211,7 +211,7 @@ public class OpponentMarkerManager {
         }
     }
 
-    private static void createMarkers(ServerWorld world, double x, double y, double z, float yaw) {
+    private static void createMarkers(ServerLevel world, double x, double y, double z, float yaw) {
         try {
             // Remove any leftover markers with same UUIDs
             var existingBody = world.getEntity(BODY_UUID);
@@ -226,44 +226,44 @@ public class OpponentMarkerManager {
             currentYaw = yaw;
 
             // --- BODY STAND: equipment visible, no nametag ---
-            ArmorStandEntity body = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-            body.setUuid(BODY_UUID);
-            body.setPosition(x, y, z);
-            body.setYaw(yaw);
+            ArmorStand body = new ArmorStand(EntityType.ARMOR_STAND, world);
+            body.setUUID(BODY_UUID);
+            body.setPos(x, y, z);
+            body.setYRot(yaw);
             body.setInvisible(true);      // Hide the wooden body
             body.setInvulnerable(true);   // Can't be damaged
             body.setNoGravity(true);      // Floats freely
             body.setSilent(true);         // No sounds
             body.setShowArms(true);       // Show held items / weapons
             body.setMarker(true);         // No hitbox at all
-            body.setHideBasePlate(true);  // No stone slab at the feet
+            body.setNoBasePlate(true);    // No stone slab at the feet
             body.setCustomNameVisible(false); // No nametag on body stand
-            body.addCommandTag("arenaclash_opponent_marker");
-            world.spawnEntity(body);
+            body.addTag("arenaclash_opponent_marker");
+            world.addFreshEntity(body);
             bodyEntity = body;
 
             // --- NAMETAG STAND: nametag visible, no equipment ---
-            ArmorStandEntity nametag = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
-            nametag.setUuid(NAMETAG_UUID);
-            nametag.setPosition(x, y + NAMETAG_Y_OFFSET, z);
-            nametag.setYaw(yaw);
+            ArmorStand nametag = new ArmorStand(EntityType.ARMOR_STAND, world);
+            nametag.setUUID(NAMETAG_UUID);
+            nametag.setPos(x, y + NAMETAG_Y_OFFSET, z);
+            nametag.setYRot(yaw);
             nametag.setInvisible(true);
             nametag.setInvulnerable(true);
             nametag.setNoGravity(true);
             nametag.setSilent(true);
             nametag.setShowArms(false);    // No arms needed
             nametag.setMarker(true);       // No hitbox
-            nametag.setHideBasePlate(true);
-            nametag.addCommandTag("arenaclash_opponent_marker");
+            nametag.setNoBasePlate(true);
+            nametag.addTag("arenaclash_opponent_marker");
 
             if (opponentName != null) {
                 nametag.setCustomName(
-                        Text.literal(opponentName)
-                                .styled(s -> s.withColor(Formatting.WHITE)));
+                        Component.literal(opponentName)
+                                .withStyle(s -> s.withColor(ChatFormatting.WHITE)));
                 nametag.setCustomNameVisible(true);
             }
 
-            world.spawnEntity(nametag);
+            world.addFreshEntity(nametag);
             nametagEntity = nametag;
 
             LOGGER.info("Spawned opponent markers (body + nametag) for {} on integrated server", opponentName);
@@ -278,11 +278,11 @@ public class OpponentMarkerManager {
      * Parse equipment SNBT and equip the body ArmorStand.
      * Format: {Helmet:"item snbt", Chestplate:"...", ...}
      */
-    private static void applyEquipment(String snbt, ServerWorld world) {
+    private static void applyEquipment(String snbt, ServerLevel world) {
         if (bodyEntity == null) return;
         try {
-            NbtCompound nbt = StringNbtReader.parse(snbt);
-            var registryOps = world.getRegistryManager().getOps(net.minecraft.nbt.NbtOps.INSTANCE);
+            CompoundTag nbt = TagParser.parseTag(snbt);
+            var registryOps = world.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
 
             applySlot(nbt, "MainHand", EquipmentSlot.MAINHAND, registryOps);
             applySlot(nbt, "OffHand", EquipmentSlot.OFFHAND, registryOps);
@@ -295,25 +295,25 @@ public class OpponentMarkerManager {
         }
     }
 
-    private static void applySlot(NbtCompound nbt, String key, EquipmentSlot slot,
-                                    com.mojang.serialization.DynamicOps<net.minecraft.nbt.NbtElement> ops) {
+    private static void applySlot(CompoundTag nbt, String key, EquipmentSlot slot,
+                                    com.mojang.serialization.DynamicOps<net.minecraft.nbt.Tag> ops) {
         try {
             if (nbt.contains(key)) {
                 String itemSnbt = nbt.getString(key);
                 if (itemSnbt.isEmpty() || itemSnbt.equals("{}")) {
-                    bodyEntity.equipStack(slot, ItemStack.EMPTY);
+                    bodyEntity.setItemSlot(slot, ItemStack.EMPTY);
                 } else {
-                    NbtCompound itemNbt = StringNbtReader.parse(itemSnbt);
+                    CompoundTag itemNbt = TagParser.parseTag(itemSnbt);
                     ItemStack stack = ItemStack.CODEC.parse(ops, itemNbt)
                             .resultOrPartial(err -> {})
                             .orElse(ItemStack.EMPTY);
-                    bodyEntity.equipStack(slot, stack);
+                    bodyEntity.setItemSlot(slot, stack);
                 }
             } else {
-                bodyEntity.equipStack(slot, ItemStack.EMPTY);
+                bodyEntity.setItemSlot(slot, ItemStack.EMPTY);
             }
         } catch (Exception e) {
-            bodyEntity.equipStack(slot, ItemStack.EMPTY);
+            bodyEntity.setItemSlot(slot, ItemStack.EMPTY);
         }
     }
 }

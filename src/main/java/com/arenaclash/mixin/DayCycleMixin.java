@@ -4,7 +4,7 @@ import com.arenaclash.config.GameConfig;
 import com.arenaclash.game.GameManager;
 import com.arenaclash.game.GamePhase;
 import com.arenaclash.tcp.SingleplayerBridge;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Vanilla MC day = 24000 ticks.  If config.dayDurationTicks = 6000,
  * we need to advance time 4x faster (add 3 extra ticks per tick).
  */
-@Mixin(ServerWorld.class)
+@Mixin(ServerLevel.class)
 public class DayCycleMixin {
 
     @Inject(method = "tick", at = @At("TAIL"))
@@ -26,10 +26,10 @@ public class DayCycleMixin {
                 || SingleplayerBridge.survivalPhaseActive;
         if (!isSurvival) return;
 
-        ServerWorld world = (ServerWorld) (Object) this;
+        ServerLevel world = (ServerLevel) (Object) this;
 
         // Only accelerate the overworld
-        if (world.getRegistryKey() != net.minecraft.world.World.OVERWORLD) return;
+        if (world.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
 
         // Calculate speed multiplier
         int dayDuration = SingleplayerBridge.dayDurationTicks;
@@ -50,7 +50,7 @@ public class DayCycleMixin {
         if (extraTicks <= 0) return;
 
         // Advance world time
-        long currentTime = world.getTimeOfDay();
-        world.setTimeOfDay(currentTime + extraTicks);
+        long currentTime = world.getDayTime();
+        world.setDayTime(currentTime + extraTicks);
     }
 }
