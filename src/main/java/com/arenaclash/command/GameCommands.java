@@ -13,7 +13,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.arguments.EntityArgument;
-import net.minecraft.server.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.MutableComponent;
@@ -22,8 +21,9 @@ import net.minecraft.ChatFormatting;
 
 import java.util.List;
 
-import static net.minecraft.server.commands.Commands.argument;
-import static net.minecraft.server.commands.Commands.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.hasPermission;
+import static net.minecraft.commands.Commands.literal;
 
 /**
  * Registers all /ac (arenaclash) commands.
@@ -32,7 +32,7 @@ public class GameCommands {
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            var root = literal("ac").requires(source -> source.hasPermissionLevel(2));
+            var root = literal("ac").requires(hasPermission(net.minecraft.commands.Commands.LEVEL_GAMEMASTERS));
 
             // /ac start — start game with 2 TCP-connected players
             root.then(literal("start")

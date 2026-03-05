@@ -43,7 +43,7 @@ public class GameEventHandlers {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (damageSource.getEntity() instanceof ServerPlayer player) {
                 // Spawner mobs don't give cards
-                if (entity.getTags().contains("arenaclash_spawner_mob")) {
+                if (entity.entityTags().contains("arenaclash_spawner_mob")) {
                     return;
                 }
 
@@ -53,7 +53,7 @@ public class GameEventHandlers {
                 // Must be checked before the PassiveEntity baby filter because some hostile
                 // mobs (HoglinEntity) extend AnimalEntity → PassiveEntity.
                 boolean isBabyHostile = false;
-                if (entity instanceof net.minecraft.world.entity.monster.Zombie zombie && zombie.isBaby()) {
+                if (entity instanceof net.minecraft.world.entity.monster.zombie.Zombie zombie && zombie.isBaby()) {
                     isBabyHostile = true;
                 } else if (entity instanceof net.minecraft.world.entity.monster.piglin.Piglin piglin && piglin.isBaby()) {
                     isBabyHostile = true;
@@ -66,7 +66,7 @@ public class GameEventHandlers {
                 if (isBabyHostile) {
                     // Special case: actual baby zombie (EntityType.ZOMBIE, not subtype) → baby_zombie card
                     if (entity.getType() == net.minecraft.world.entity.EntityType.ZOMBIE
-                            && entity instanceof net.minecraft.world.entity.monster.Zombie z && z.isBaby()) {
+                            && entity instanceof net.minecraft.world.entity.monster.zombie.Zombie z && z.isBaby()) {
                         cardId = "baby_zombie";
                         if (MobCardRegistry.getById(cardId) == null) return;
                     } else {
@@ -111,8 +111,8 @@ public class GameEventHandlers {
                 if (weapon != null && !weapon.isEmpty()) {
                     int lootingLevel = 0;
                     var enchants = weapon.getEnchantments();
-                    for (var entry : enchants.getEnchantments()) {
-                        if (entry.matchesKey(net.minecraft.world.item.enchantment.Enchantments.LOOTING)) {
+                    for (var entry : enchants.keySet()) {
+                        if (entry.is(net.minecraft.world.item.enchantment.Enchantments.LOOTING)) {
                             lootingLevel = enchants.getLevel(entry);
                             break;
                         }
@@ -171,10 +171,10 @@ public class GameEventHandlers {
             if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
 
             // Check if the entity is an arena entity - ALWAYS protect regardless of player status
-            if (entity.getTags().contains("arenaclash_mob")
-                    || entity.getTags().contains("arenaclash_structure")
-                    || entity.getTags().contains("arenaclash_marker")
-                    || entity.getTags().contains("arenaclash_opponent_marker")) {
+            if (entity.entityTags().contains("arenaclash_mob")
+                    || entity.entityTags().contains("arenaclash_structure")
+                    || entity.entityTags().contains("arenaclash_marker")
+                    || entity.entityTags().contains("arenaclash_opponent_marker")) {
                 serverPlayer.displayClientMessage(Component.translatable("arenaclash.msg.arena_no_attack"), true);
                 return InteractionResult.FAIL;
             }

@@ -23,26 +23,26 @@ public class EntityRideMixin {
         Entity self = (Entity) (Object) this;
 
         // Arena mobs cannot ride anything
-        if (self.getTags().contains("arenaclash_mob")) {
+        if (self.entityTags().contains("arenaclash_mob")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Spawner-tagged mobs cannot ride anything (prevents them getting stuck in boats)
-        if (self.getTags().contains("arenaclash_spawner_mob")) {
+        if (self.entityTags().contains("arenaclash_spawner_mob")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Nothing can ride arena-tagged vehicles either
-        if (vehicle.getTags().contains("arenaclash_mob")
-                || vehicle.getTags().contains("arenaclash_structure")) {
+        if (vehicle.entityTags().contains("arenaclash_mob")
+                || vehicle.entityTags().contains("arenaclash_structure")) {
             cir.setReturnValue(false);
             return;
         }
 
         // Prevent arena mobs from becoming vehicles (e.g. spider jockeys, chicken jockeys)
-        if (vehicle.getTags().contains("arenaclash_spawner_mob")) {
+        if (vehicle.entityTags().contains("arenaclash_spawner_mob")) {
             cir.setReturnValue(false);
         }
     }

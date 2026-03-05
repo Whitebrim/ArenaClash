@@ -79,14 +79,14 @@ public class ProjectileCollisionMixin {
     }
 
     private static boolean isArenaProjectile(Entity entity) {
-        return entity.getTags().contains("arenaclash_mob_projectile")
-                || entity.getTags().contains("arenaclash_tower_arrow");
+        return entity.entityTags().contains("arenaclash_mob_projectile")
+                || entity.entityTags().contains("arenaclash_tower_arrow");
     }
 
     private static boolean isArenaEntity(Entity entity) {
-        return entity.getTags().contains("arenaclash_mob")
-                || entity.getTags().contains("arenaclash_mob_hp")
-                || entity.getTags().contains("arenaclash_dmg_number")
-                || entity.getTags().contains("arenaclash_vex");
+        return entity.entityTags().contains("arenaclash_mob")
+                || entity.entityTags().contains("arenaclash_mob_hp")
+                || entity.entityTags().contains("arenaclash_dmg_number")
+                || entity.entityTags().contains("arenaclash_vex");
     }
 }

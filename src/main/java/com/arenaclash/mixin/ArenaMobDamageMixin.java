@@ -43,7 +43,7 @@ public class ArenaMobDamageMixin {
     private void arenaclash$blockVanillaDamage(DamageSource source, float amount,
                                                 CallbackInfoReturnable<Boolean> cir) {
         Entity self = (Entity) (Object) this;
-        if (self.getTags().contains("arenaclash_mob")) {
+        if (self.entityTags().contains("arenaclash_mob")) {
             cir.setReturnValue(false);
         }
     }
