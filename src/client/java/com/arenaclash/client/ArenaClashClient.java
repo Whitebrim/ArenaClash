@@ -11,7 +11,7 @@ import com.arenaclash.network.NetworkHandler;
 import com.arenaclash.tcp.SyncProtocol;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -131,8 +131,8 @@ public class ArenaClashClient implements ClientModInitializer {
     private void registerClientCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             // /ac <anything> → forward via TCP
-            dispatcher.register(ClientCommandManager.literal("ac")
-                    .then(ClientCommandManager.argument("args", StringArgumentType.greedyString())
+            dispatcher.register(ClientCommands.literal("ac")
+                    .then(ClientCommands.argument("args", StringArgumentType.greedyString())
                             .executes(ctx -> {
                                 String args = StringArgumentType.getString(ctx, "args");
                                 ArenaClashTcpClient tcp = getTcpClient();

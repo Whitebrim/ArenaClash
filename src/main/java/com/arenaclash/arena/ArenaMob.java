@@ -1231,7 +1231,7 @@ public class ArenaMob {
         // Entity status 4 = PLAY_ATTACK_SOUND / attack animation
         // This triggers native attack animations for mobs like Iron Golem,
         // Ravager, Hoglin, Zoglin, etc. that don't use swing for their animation
-        if (attacker instanceof net.minecraft.world.entity.animal.IronGolem
+        if (attacker instanceof net.minecraft.world.entity.animal.golem.IronGolem
                 || attacker instanceof net.minecraft.world.entity.monster.Ravager
                 || attacker instanceof net.minecraft.world.entity.monster.hoglin.Hoglin
                 || attacker instanceof net.minecraft.world.entity.monster.Zoglin) {
